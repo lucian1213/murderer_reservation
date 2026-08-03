@@ -263,6 +263,17 @@ section.block{margin-bottom:46px;}
 
 .hint{color:var(--dust-dim); font-size:13.5px; padding:22px 2px;}
 
+/* 오픈 대기 */
+.opengate{
+  border:1px solid var(--line); background:linear-gradient(180deg,rgba(240,210,154,.07),rgba(0,0,0,.35));
+  padding:30px 26px; text-align:center; margin-bottom:38px;
+}
+.opengate .lab{font-family:var(--tag); font-size:13px; letter-spacing:.34em; color:var(--ember); margin:0 0 10px;}
+.opengate .count{font-family:var(--tag); font-size:clamp(34px,7vw,54px); letter-spacing:.06em; line-height:1;
+  color:var(--lamp); margin:0; font-variant-numeric:tabular-nums;}
+.opengate .when{font-size:13px; color:var(--dust); margin:12px 0 0;}
+.day.waiting{opacity:.6; cursor:not-allowed;}
+
 /* ───────── 내 예약 ───────── */
 .ticket{
   border:1px solid var(--line);
@@ -315,6 +326,11 @@ footer .brand{font-family:var(--tag); letter-spacing:.3em;}
 </style>
 </head>
 <body>
+<noscript><div style="background:#7d2517;color:#fff;padding:14px 18px;text-align:center;font-family:sans-serif;font-size:14px">
+이 페이지는 자바스크립트가 켜져 있어야 예약을 받을 수 있습니다.</div></noscript>
+<div id="netBar" hidden style="background:#7d2517;color:#ffe9e2;padding:12px 18px;text-align:center;font-size:13.5px;position:relative;z-index:99">
+  예약 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 페이지를 새로고침해 주세요.
+</div>
 <div class="wrap">
 
   <!-- ══════ 헤더 ══════ -->
@@ -357,6 +373,12 @@ footer .brand{font-family:var(--tag); letter-spacing:.3em;}
     <div class="desk">
       <p class="who"><span id="deskCode">AIM-0000</span><b id="deskNick">닉네임</b>님, 어서 오세요.<em id="deskFlag" style="font-style:normal;color:var(--marker);margin-left:10px;font-size:12px;letter-spacing:.1em;" hidden>TEST</em></p>
       <button class="btn ghost" id="outBtn">체크아웃</button>
+    </div>
+
+    <div class="opengate" id="openGate" hidden>
+      <p class="lab">RESERVATION OPENS IN</p>
+      <p class="count" id="openCount">--:--:--</p>
+      <p class="when" id="openWhen"></p>
     </div>
 
     <section class="block" id="mineBlock" hidden>
@@ -441,13 +463,22 @@ const CONFIG = {
     supporters:   'aim_supporters',
     reservations: 'aim_reservations',
     slots:        'aim_slots',
-    blocks:       'aim_blocks'
-  }
+    blocks:       'aim_blocks',
+    config:       'aim_config',
+    meta:         'aim_meta'
+  },
+  configDoc: 'booking'   // 예약 오픈 시각이 담긴 문서 (관리자 페이지에서 설정)
 };
 
 /* ══════════════════════════════════════════════════ */
-firebase.initializeApp(CONFIG.firebase);
-const db = firebase.firestore();
+let db = null, netOk = true;
+try {
+  firebase.initializeApp(CONFIG.firebase);
+  db = firebase.firestore();
+} catch (e) {
+  netOk = false;
+  console.error('Firebase 초기화 실패:', e);
+}
 
 const $ = s => document.querySelector(s);
 const state = {
@@ -457,8 +488,12 @@ const state = {
   month: null,
   date: null,
   taken: {},           // slotId -> 예약 수
-  blocks: new Set(),   // '2026-08-14' 또는 '2026-08-14_10:00'
-  mine: null           // 내 예약 데이터
+  blocks: {},          // '2026-08-14' 또는 '2026-08-14_10:00' -> 막은 시각(ms)
+  mine: null,          // 내 예약 데이터
+  openAt: null,        // 예약 오픈 시각(ms), null이면 항상 열림
+  releaseOnOpen: false,// 오픈 시각에 기존 차단을 자동으로 풀지
+  offset: 0,           // 서버 시계와의 차이(ms)
+  tick: null
 };
 
 /* ── 안전한 저장소 (미리보기 환경 대비) ── */
@@ -504,6 +539,28 @@ function weekendsOf(monthKey) {
     .map(([, row]) => row);
 }
 
+/* ── 서버 시계 맞추기 (기기 시각이 틀어져 있어도 오픈 시각이 흔들리지 않게) ── */
+async function syncClock(){
+  try{
+    const ref = db.collection(CONFIG.col.meta).doc('clock');
+    await ref.set({ t: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true });
+    const snap = await ref.get();
+    const t = snap.exists && snap.data().t;
+    if (t && t.toDate) state.offset = t.toDate().getTime() - Date.now();
+  }catch(e){ state.offset = 0; }
+}
+const now = () => Date.now() + state.offset;
+const isOpen = () => !state.openAt || now() >= state.openAt;
+
+async function loadConfig(){
+  try{
+    const snap = await db.collection(CONFIG.col.config).doc(CONFIG.configDoc).get();
+    const v = snap.exists ? snap.data() : {};
+    state.openAt = (v.openAt && v.openAt.toDate) ? v.openAt.toDate().getTime() : null;
+    state.releaseOnOpen = !!v.releaseBlocksOnOpen;
+  }catch(e){ state.openAt = null; state.releaseOnOpen = false; }
+}
+
 /* ── 데이터 읽기 ── */
 async function loadAvailability() {
   const [slotSnap, blockSnap] = await Promise.all([
@@ -512,10 +569,11 @@ async function loadAvailability() {
   ]);
   state.taken = {};
   slotSnap.forEach(doc => { state.taken[doc.id] = doc.data().taken || 0; });
-  state.blocks = new Set();
+  state.blocks = {};
   blockSnap.forEach(doc => {
     const b = doc.data();
-    state.blocks.add(b.time ? slotId(b.date, b.time) : b.date);
+    const at = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
+    state.blocks[b.time ? slotId(b.date, b.time) : b.date] = at;
   });
 }
 
@@ -527,9 +585,15 @@ async function loadMine() {
 
 /* ── 남은 자리 ── */
 const takenAt = (dateKey, time) => state.taken[slotId(dateKey, time)] || 0;
-const isShut  = (dateKey, time) => state.blocks.has(dateKey) || (time && state.blocks.has(slotId(dateKey, time)));
+function blockedKey(key){
+  if (!(key in state.blocks)) return false;
+  // 오픈 시각에 자동 해제 설정이 켜져 있으면, 오픈 전에 걸어둔 차단은 오픈과 동시에 풀린다
+  if (state.releaseOnOpen && isOpen() && state.blocks[key] < (state.openAt || 0)) return false;
+  return true;
+}
+const isShut  = (dateKey, time) => blockedKey(dateKey) || (time && blockedKey(slotId(dateKey, time)));
 function seatsLeftOn(dateKey) {
-  if (state.blocks.has(dateKey)) return -1;
+  if (blockedKey(dateKey)) return -1;
   return CONFIG.times.reduce((sum, t) =>
     sum + (isShut(dateKey, t) ? 0 : Math.max(0, CONFIG.capacity - takenAt(dateKey, t))), 0);
 }
@@ -584,6 +648,7 @@ async function openBooking() {
   $('#deskNick').textContent = state.user.nick;
   $('#deskFlag').hidden = !state.user.master;
   renderMonths();
+  await syncClock();
   await refresh();
 }
 
@@ -597,9 +662,36 @@ function checkOut() {
 }
 
 async function refresh() {
-  await Promise.all([loadAvailability(), loadMine()]);
+  await Promise.all([loadConfig(), loadAvailability(), loadMine()]);
+  renderGate();
   renderWeeks();
   renderSlots();
+}
+
+/* ── 오픈 카운트다운 ── */
+function renderGate(){
+  const box = $('#openGate');
+  if (isOpen()) {
+    box.hidden = true;
+    if (state.tick) { clearInterval(state.tick); state.tick = null; }
+    return;
+  }
+  box.hidden = false;
+  const when = new Date(state.openAt);
+  const h = when.getHours();
+  $('#openWhen').textContent =
+    `${when.getMonth()+1}월 ${when.getDate()}일 (${'일월화수목금토'[when.getDay()]}) `
+    + `${h < 12 ? '오전' : '오후'} ${h % 12 === 0 ? 12 : h % 12}시`
+    + `${when.getMinutes() ? ' ' + when.getMinutes() + '분' : ''}에 열립니다`;
+  const paint = () => {
+    const gap = state.openAt - now();
+    if (gap <= 0) { refresh(); return; }
+    const s = Math.floor(gap/1000), d = Math.floor(s/86400);
+    const hh = pad(Math.floor(s%86400/3600)), mm = pad(Math.floor(s%3600/60)), ss = pad(s%60);
+    $('#openCount').textContent = (d ? `${d}일 ` : '') + `${hh}:${mm}:${ss}`;
+  };
+  paint();
+  if (!state.tick) state.tick = setInterval(paint, 1000);
 }
 
 /* ══════════════ 그리기 ══════════════ */
@@ -632,14 +724,15 @@ function renderWeeks() {
       const left = seatsLeftOn(info.key);
       const mine = state.mine && state.mine.date === info.key;
       let note, cls = 'day';
-      if (left < 0)       { note = '휴관'; cls += ' shut'; }
+      if (!isOpen())      { note = '오픈 예정'; cls += ' waiting'; }
+      else if (left < 0)  { note = '휴관'; cls += ' shut'; }
       else if (left === 0){ note = '전 회차 마감'; cls += ' full'; }
       else                { note = leftWord(left); }
       if (state.date === info.key) cls += ' on';
       if (mine) note = '나의 예약';
 
       cell.className = cls;
-      cell.disabled = left < 0;
+      cell.disabled = left < 0 || !isOpen();
       cell.innerHTML =
         `<span class="mon">${info.m !== Number(state.month.slice(5)) ? names[info.m-1] : ''}</span>` +
         `<span class="num">${info.d}</span>` +
@@ -670,8 +763,9 @@ function renderSlots() {
     const mine = state.mine && state.mine.date === state.date && state.mine.time === time;
     const b = document.createElement('button');
     b.className = 'slot' + (mine ? ' mine' : '');
-    b.disabled = shut || (left <= 0 && !mine);
-    const note = mine ? '나의 예약' : shut ? '예약 불가' : left <= 0 ? '예약 마감'
+    b.disabled = !isOpen() || shut || (left <= 0 && !mine);
+    const note = !isOpen() ? '오픈 예정'
+               : mine ? '나의 예약' : shut ? '예약 불가' : left <= 0 ? '예약 마감'
                : CONFIG.capacity === 1 ? '예약 가능' : `${CONFIG.capacity}석 중 ${left}석 남음`;
     b.innerHTML = `<span class="tent">${i+1}</span><span><span class="t">${time}</span><span class="s">${note}</span></span>`;
     b.onclick = () => mine ? null : askReserve(state.date, time);
@@ -716,6 +810,10 @@ function openVeil(title, body, yes, action) {
 const closeVeil = () => { $('#veil').classList.remove('open'); veilAction = null; };
 
 function askReserve(dateKey, time) {
+  if (!isOpen()) {
+    openVeil('아직 예약이 열리지 않았습니다', '화면 위 카운트다운이 끝나면 바로 예약할 수 있습니다.', '알겠습니다', null);
+    return;
+  }
   if (tooLate(dateKey)) {
     openVeil('예약할 수 없는 날짜입니다',
       `공연 ${CONFIG.changeDeadlineDays}일 전까지만 예약과 변경이 가능합니다. 다른 날짜를 골라 주세요.`,
@@ -825,6 +923,20 @@ buildDates();
   try { state.user = JSON.parse(saved); renderMonths(); openBooking(); }
   catch (e) { store.removeItem('aimUser'); }
 })();
+
+/* 연결 실패를 화면에 알림 (조용히 빈 화면이 되지 않도록) */
+if (!netOk) {
+  const bar = document.getElementById('netBar');
+  if (bar) bar.hidden = false;
+  const b = document.querySelector('#gateBtn');
+  if (b) b.disabled = true;
+}
+window.addEventListener('error', e => {
+  if (e.message && /firebase|is not defined/i.test(e.message)) {
+    const bar = document.getElementById('netBar');
+    if (bar) bar.hidden = false;
+  }
+});
 </script>
 </body>
 </html>
