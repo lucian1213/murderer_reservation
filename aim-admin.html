@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>아이엠 어 머더러 · 예약 관리</title>
+<meta name="robots" content="noindex, nofollow">
+
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Gowun+Batang:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+
+<style>
+:root{
+  --ink:#0a0807; --panel:#181310; --panel-2:#211a16;
+  --line:#31261f; --line-soft:#241c17;
+  --bone:#e8e0d4; --dust:#9d9083; --dust-dim:#6e6459;
+  --lamp:#f0d29a; --ember:#c2622b; --ember-hi:#e07b3c;
+  --marker:#e3b23c; --blood:#9d3020; --go:#5f9e6a;
+  --serif:'Gowun Batang','Nanum Myeongjo',serif;
+  --sans:'Pretendard Variable',Pretendard,-apple-system,system-ui,'Malgun Gothic',sans-serif;
+  --tag:'Bebas Neue','Pretendard Variable',sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:var(--ink); color:var(--bone); font-family:var(--sans);
+  font-size:14px; line-height:1.6; -webkit-font-smoothing:antialiased; min-height:100vh;
+}
+body::before{
+  content:''; position:fixed; inset:0; z-index:0; pointer-events:none;
+  background:
+    radial-gradient(700px 400px at 10% -10%, rgba(240,210,154,.06), transparent 70%),
+    linear-gradient(180deg,#0d0a08,#070505);
+}
+.wrap{position:relative; z-index:1; max-width:1180px; margin:0 auto; padding:28px 20px 90px;}
+
+/* 헤더 */
+.top{display:flex; align-items:flex-end; justify-content:space-between; gap:20px; flex-wrap:wrap;
+  border-bottom:1px solid var(--line); padding-bottom:20px; margin-bottom:26px;}
+.top h1{font-family:var(--serif); font-size:22px; font-weight:700; margin:0;}
+.top .sub{font-family:var(--tag); font-size:13px; letter-spacing:.3em; color:var(--ember); margin:0 0 4px;}
+.top .right{display:flex; gap:8px; align-items:center;}
+
+/* 버튼 */
+.btn{font-family:var(--sans); font-size:13.5px; font-weight:600; padding:10px 18px;
+  border:1px solid var(--ember); background:var(--ember); color:#160c06; cursor:pointer; border-radius:0;}
+.btn:hover{background:var(--ember-hi);}
+.btn.ghost{background:transparent; color:var(--dust); border-color:var(--line);}
+.btn.ghost:hover{color:var(--bone); border-color:var(--dust-dim);}
+.btn.danger{background:transparent; color:#e08a72; border-color:#4d2a22;}
+.btn.danger:hover{background:rgba(157,48,32,.18); color:#f0a48c;}
+.btn:disabled{opacity:.4; cursor:not-allowed;}
+.mini{font-size:11.5px; padding:5px 10px; font-weight:500; border-radius:0; cursor:pointer;
+  background:transparent; border:1px solid var(--line); color:var(--dust); font-family:var(--sans);}
+.mini:hover{border-color:var(--dust-dim); color:var(--bone); background:rgba(255,255,255,.04);}
+.mini.warn{color:#e08a72; border-color:#4a2820;}
+.mini.warn:hover{background:rgba(157,48,32,.16); color:#f0a48c;}
+.mini.go{color:#8fc79a; border-color:#2b4331;}
+.mini.go:hover{background:rgba(95,158,106,.14); color:#a9dcb3;}
+.mini:disabled{opacity:.35; cursor:not-allowed;}
+:focus-visible{outline:2px solid var(--marker); outline-offset:2px;}
+
+input[type=text],input[type=password],select,textarea{
+  padding:10px 12px; background:rgba(0,0,0,.35); border:1px solid var(--line);
+  color:var(--bone); font-family:var(--sans); font-size:14px; border-radius:0; width:100%;}
+input:focus,select:focus,textarea:focus{outline:none; border-color:var(--ember);}
+label.lab{display:block; font-family:var(--tag); font-size:12px; letter-spacing:.2em; color:var(--dust); margin-bottom:6px;}
+
+/* 로그인 */
+#gate{max-width:420px; margin:14vh auto; border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--panel-2),var(--panel)); padding:30px;}
+#gate h2{font-family:var(--serif); margin:0 0 6px; font-size:19px;}
+#gate p.sub{color:var(--dust); font-size:13px; margin:0 0 22px;}
+
+/* 탭 */
+.tabs{display:flex; gap:6px; margin-bottom:24px; flex-wrap:wrap;}
+.tab{font-size:13.5px; padding:9px 18px; border:1px solid var(--line-soft);
+  background:transparent; color:var(--dust-dim); cursor:pointer; font-family:var(--sans);}
+.tab:hover{color:var(--bone);}
+.tab.on{background:var(--bone); color:var(--ink); border-color:var(--bone); font-weight:600;}
+
+/* 요약 */
+.stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:1px;
+  background:var(--line-soft); border:1px solid var(--line-soft); margin-bottom:24px;}
+.stat{background:var(--panel); padding:16px 18px;}
+.stat dt{font-family:var(--tag); font-size:11.5px; letter-spacing:.2em; color:var(--dust-dim); margin-bottom:3px;}
+.stat dd{margin:0; font-family:var(--tag); font-size:27px; line-height:1.1; letter-spacing:.02em;}
+.stat dd small{font-family:var(--sans); font-size:12px; color:var(--dust); letter-spacing:0; margin-left:5px;}
+
+/* 도구줄 */
+.bar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:14px 16px;
+  border:1px solid var(--line-soft); background:rgba(0,0,0,.25); margin-bottom:20px;}
+.bar .grow{flex:1; min-width:180px;}
+.bar .sep{width:1px; height:22px; background:var(--line); margin:0 4px;}
+.months{display:flex; gap:6px; flex-wrap:wrap;}
+.month-tab{font-family:var(--tag); font-size:15px; letter-spacing:.14em; padding:7px 14px;
+  background:transparent; color:var(--dust-dim); border:1px solid var(--line-soft); cursor:pointer;}
+.month-tab.on{background:var(--bone); color:var(--ink); border-color:var(--bone);}
+
+/* 날짜 카드 */
+.days{display:flex; flex-direction:column; gap:12px;}
+.daycard{border:1px solid var(--line-soft); background:rgba(0,0,0,.22);}
+.daycard.allblocked{opacity:.62;}
+.dayhead{display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+  padding:12px 16px; border-bottom:1px solid var(--line-soft); background:rgba(255,255,255,.015);}
+.dayhead h3{margin:0; font-family:var(--serif); font-size:16.5px; font-weight:700;}
+.dayhead h3 em{font-style:normal; color:var(--dust); font-size:13px; margin-left:6px;}
+.dayhead .cnt{font-family:var(--tag); font-size:14px; letter-spacing:.1em; color:var(--marker);}
+.dayhead .acts{margin-left:auto; display:flex; gap:6px; flex-wrap:wrap;}
+.today{font-family:var(--tag); font-size:11px; letter-spacing:.14em; color:var(--ink);
+  background:var(--lamp); padding:2px 7px;}
+.past{font-size:11.5px; color:var(--dust-dim); border:1px solid var(--line); padding:1px 7px;}
+
+.cells{display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:var(--line-soft);}
+.cell{background:var(--panel); padding:13px 14px; display:flex; gap:12px; align-items:flex-start; min-height:96px;}
+.cell .tent{flex:0 0 auto; width:30px; height:27px; display:flex; align-items:flex-end; justify-content:center;
+  background:linear-gradient(175deg,var(--marker),#b98a20); clip-path:polygon(50% 0%,100% 100%,0% 100%);
+  font-family:var(--tag); font-size:14px; color:#1a1204; padding-bottom:2px; line-height:1;}
+.cell.empty .tent,.cell.blocked .tent{background:linear-gradient(175deg,#5c5348,#3d372f); color:#1a1712;}
+.cell .body{flex:1; min-width:0;}
+.cell .time{font-family:var(--tag); font-size:19px; letter-spacing:.05em; line-height:1.2;}
+.cell .who{font-size:13.5px; color:var(--bone); margin-top:2px; word-break:break-all;}
+.cell .who b{font-weight:600;}
+.cell .code{font-family:var(--tag); font-size:12.5px; letter-spacing:.1em; color:var(--dust);}
+.cell .note{font-size:12px; color:var(--dust-dim); margin-top:2px;}
+.cell .acts{display:flex; gap:5px; margin-top:9px; flex-wrap:wrap;}
+.cell.taken{background:linear-gradient(180deg,rgba(194,98,43,.13),var(--panel));}
+.cell.blocked{background:repeating-linear-gradient(135deg,var(--panel),var(--panel) 9px,rgba(157,48,32,.09) 9px,rgba(157,48,32,.09) 18px);}
+.pill{display:inline-block; font-size:11px; padding:1px 8px; border:1px solid var(--line); color:var(--dust); margin-top:5px;}
+.pill.ok{color:#8fc79a; border-color:#2b4331;}
+.pill.wait{color:var(--marker); border-color:#4a3c18;}
+
+/* 명단 */
+table{width:100%; border-collapse:collapse; font-size:13.5px;}
+th{font-family:var(--tag); font-size:12px; letter-spacing:.18em; color:var(--dust-dim);
+  text-align:left; padding:10px 12px; border-bottom:1px solid var(--line);}
+td{padding:10px 12px; border-bottom:1px solid var(--line-soft);}
+tr:hover td{background:rgba(255,255,255,.02);}
+.grid2{display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start;}
+.box{border:1px solid var(--line-soft); background:rgba(0,0,0,.22); padding:20px;}
+.box h3{font-family:var(--serif); font-size:16px; margin:0 0 4px;}
+.box p.sub{color:var(--dust); font-size:12.5px; margin:0 0 16px;}
+.field{margin-bottom:12px;}
+
+.empty-state{color:var(--dust-dim); padding:40px 0; text-align:center; font-size:13.5px;}
+
+/* 모달 */
+.veil{position:fixed; inset:0; z-index:60; display:none; background:rgba(4,3,2,.84);
+  align-items:center; justify-content:center; padding:20px;}
+.veil.open{display:flex;}
+.veil .sheet{width:100%; max-width:440px; border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--panel-2),var(--panel)); padding:26px; max-height:88vh; overflow:auto;}
+.veil h3{font-family:var(--serif); font-size:18px; margin:0 0 6px;}
+.veil p.sub{color:var(--dust); font-size:13px; margin:0 0 18px; white-space:pre-line;}
+.veil .row{display:flex; gap:8px; margin-top:20px;}
+.veil .row .btn{flex:1;}
+.msg{font-size:13px; min-height:19px; margin-top:12px;}
+.msg.err{color:#e0785c;} .msg.ok{color:#8fc79a;}
+
+.toast{position:fixed; left:50%; bottom:28px; transform:translateX(-50%); z-index:80;
+  background:var(--bone); color:var(--ink); padding:11px 22px; font-size:13.5px; font-weight:600;
+  opacity:0; pointer-events:none; transition:opacity .2s, transform .2s;}
+.toast.show{opacity:1; transform:translateX(-50%) translateY(-6px);}
+.spin{display:inline-block; width:12px; height:12px; border:2px solid rgba(232,224,212,.25);
+  border-top-color:var(--ember); border-radius:50%; animation:sp .7s linear infinite; vertical-align:-2px; margin-right:6px;}
+@keyframes sp{to{transform:rotate(360deg);}}
+
+@media (max-width:860px){
+  .cells{grid-template-columns:1fr;}
+  .grid2{grid-template-columns:1fr;}
+  .wrap{padding:18px 14px 70px;}
+}
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms !important; transition-duration:.01ms !important;}}
+</style>
+</head>
+<body>
+
+<!-- 로그인 -->
+<div id="gate">
+  <h2>예약 관리</h2>
+  <p class="sub">I'M (NOT) A MURDERER · 관리자 전용</p>
+  <div class="field">
+    <label class="lab" for="pw">비밀번호</label>
+    <input type="password" id="pw" autocomplete="current-password">
+  </div>
+  <button class="btn" id="pwBtn" style="width:100%">열기</button>
+  <p class="msg" id="pwMsg"></p>
+</div>
+
+<!-- 본문 -->
+<div class="wrap" id="app" hidden>
+  <div class="top">
+    <div>
+      <p class="sub">ADMIN</p>
+      <h1>아이엠 어 머더러 예약 관리</h1>
+    </div>
+    <div class="right">
+      <button class="btn ghost" id="reloadBtn">새로고침</button>
+      <button class="btn ghost" id="lockBtn">잠그기</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" data-view="board">예약 현황</button>
+    <button class="tab" data-view="list">예약 목록</button>
+    <button class="tab" data-view="people">후원자 명단</button>
+    <button class="tab" data-view="tools">도구</button>
+  </div>
+
+  <dl class="stats" id="stats"></dl>
+
+  <!-- 예약 현황 -->
+  <section id="view-board">
+    <div class="bar">
+      <div class="months" id="months"></div>
+      <div class="sep"></div>
+      <button class="mini warn" id="blockMonth">이 달 빈 회차 전부 막기</button>
+      <button class="mini go" id="openMonth">이 달 차단 전부 풀기</button>
+      <div class="sep"></div>
+      <button class="mini warn" id="blockAll">시즌 전체 빈 회차 막기</button>
+      <button class="mini go" id="openAll">시즌 전체 차단 풀기</button>
+    </div>
+    <div class="days" id="days"></div>
+  </section>
+
+  <!-- 예약 목록 -->
+  <section id="view-list" hidden>
+    <div class="bar">
+      <div class="grow"><input type="text" id="q" placeholder="후원번호 · 닉네임 · 날짜로 검색"></div>
+      <button class="mini" id="csvBtn">CSV 내려받기</button>
+    </div>
+    <div id="listBox"></div>
+  </section>
+
+  <!-- 후원자 명단 -->
+  <section id="view-people" hidden>
+    <div class="grid2">
+      <div class="box">
+        <h3>후원자 추가</h3>
+        <p class="sub">한 줄에 한 명씩 <b>후원번호, 닉네임</b> 형식으로 붙여넣으면 한 번에 등록됩니다.</p>
+        <div class="field">
+          <textarea id="bulk" rows="8" placeholder="AIM-0001, 홍길동&#10;AIM-0002, 닉네임"></textarea>
+        </div>
+        <button class="btn" id="addPeople">명단에 넣기</button>
+        <p class="msg" id="peopleMsg"></p>
+      </div>
+      <div class="box">
+        <h3>등록된 후원자 <span id="peopleCount" style="color:var(--marker);font-family:var(--tag);"></span></h3>
+        <p class="sub">예약을 잡은 후원자는 날짜가 함께 표시됩니다.</p>
+        <div style="max-height:460px; overflow:auto;">
+          <table id="peopleTable"></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 도구 -->
+  <section id="view-tools" hidden>
+    <div class="grid2">
+      <div class="box">
+        <h3>비밀번호 바꾸기</h3>
+        <p class="sub">새 비밀번호를 넣고 나온 값을 파일 위쪽 <b>CONFIG.adminHash</b>에 붙여넣으면 바뀝니다.</p>
+        <div class="field"><input type="text" id="newPw" placeholder="새 비밀번호"></div>
+        <button class="btn ghost" id="hashBtn">해시 만들기</button>
+        <div class="field" style="margin-top:14px;"><input type="text" id="hashOut" readonly placeholder="여기에 값이 나옵니다"></div>
+      </div>
+      <div class="box">
+        <h3>자리 수 다시 세기</h3>
+        <p class="sub">예약을 파이어베이스 콘솔에서 직접 지우는 등으로 잔여 표시가 실제와 어긋났을 때 실행하면, 실제 예약을 기준으로 모든 회차의 자리 수를 맞춰 놓습니다.</p>
+        <button class="btn ghost" id="recalcBtn">다시 세기</button>
+        <p class="msg" id="recalcMsg"></p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- 모달 -->
+<div class="veil" id="veil">
+  <div class="sheet">
+    <h3 id="vTitle"></h3>
+    <p class="sub" id="vBody"></p>
+    <div id="vExtra"></div>
+    <div class="row">
+      <button class="btn" id="vYes">확인</button>
+      <button class="btn ghost" id="vNo">닫기</button>
+    </div>
+    <p class="msg" id="vMsg"></p>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ══════════════════════════════════════════════
+   설정 — 예약 페이지와 반드시 같은 값이어야 합니다
+   ══════════════════════════════════════════════ */
+const CONFIG = {
+  firebase: {
+    apiKey: "AIzaSyDEwIv6IFu0_Tg4OaYiUK5GWwpHqia6tlE",
+    authDomain: "reservation-mind.firebaseapp.com",
+    projectId: "reservation-mind",
+    storageBucket: "reservation-mind.firebasestorage.app",
+    messagingSenderId: "137392518118",
+    appId: "1:137392518118:web:a33e8eaf4399b46e2b9c27"
+  },
+  seasonStart: '2026-08-14',
+  seasonEnd:   '2026-11-15',
+  openDays:    [5, 6, 0],
+  times:       ['10:00', '14:00', '18:00'],
+  capacity:    1,
+  col: { supporters:'aim_supporters', reservations:'aim_reservations', slots:'aim_slots', blocks:'aim_blocks' },
+
+  // 초기 비밀번호: mystery-aim-2026  (도구 탭에서 새 해시를 만들어 바꾸세요)
+  adminHash: '8a34fa0fbc3448141838696f00b0f6c3654d363e74cd92078de2b1b21e182860'
+};
+
+/* ── SHA-256 (외부 의존 없음) ── */
+function sha256(ascii){
+  function r(v,a){return (v>>>a)|(v<<(32-a));}
+  const K=[];const H=[];let p=2,i=0;
+  function isP(n){for(let f=2;f*f<=n;f++)if(n%f===0)return false;return true;}
+  for(p=2;i<64;p++){if(!isP(p))continue;if(i<8)H[i]=(Math.pow(p,.5)%1*4294967296)|0;K[i]=(Math.pow(p,1/3)%1*4294967296)|0;i++;}
+  const bytes=[];for(let c=0;c<ascii.length;c++){let cp=ascii.charCodeAt(c);
+    if(cp<128)bytes.push(cp);
+    else if(cp<2048){bytes.push(192|(cp>>6),128|(cp&63));}
+    else if(cp<55296||cp>=57344){bytes.push(224|(cp>>12),128|((cp>>6)&63),128|(cp&63));}
+    else{const cp2=((cp-55296)<<10)+(ascii.charCodeAt(++c)-56320)+65536;
+      bytes.push(240|(cp2>>18),128|((cp2>>12)&63),128|((cp2>>6)&63),128|(cp2&63));}}
+  const bitLen=bytes.length*8; bytes.push(0x80);
+  while(bytes.length%64!==56)bytes.push(0);
+  const hi=Math.floor(bitLen/4294967296), lo=bitLen>>>0;
+  bytes.push((hi>>>24)&255,(hi>>>16)&255,(hi>>>8)&255,hi&255,(lo>>>24)&255,(lo>>>16)&255,(lo>>>8)&255,lo&255);
+  const w=new Array(64); const h=H.slice();
+  for(let j=0;j<bytes.length;j+=64){
+    for(let t=0;t<16;t++)w[t]=(bytes[j+t*4]<<24)|(bytes[j+t*4+1]<<16)|(bytes[j+t*4+2]<<8)|bytes[j+t*4+3];
+    for(let t=16;t<64;t++){
+      const s0=r(w[t-15],7)^r(w[t-15],18)^(w[t-15]>>>3);
+      const s1=r(w[t-2],17)^r(w[t-2],19)^(w[t-2]>>>10);
+      w[t]=(w[t-16]+s0+w[t-7]+s1)|0;}
+    let [a,b,c,d,e,f,g,hh]=h;
+    for(let t=0;t<64;t++){
+      const S1=r(e,6)^r(e,11)^r(e,25), ch=(e&f)^(~e&g), t1=(hh+S1+ch+K[t]+w[t])|0;
+      const S0=r(a,2)^r(a,13)^r(a,22), mj=(a&b)^(a&c)^(b&c), t2=(S0+mj)|0;
+      hh=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;}
+    h[0]=(h[0]+a)|0;h[1]=(h[1]+b)|0;h[2]=(h[2]+c)|0;h[3]=(h[3]+d)|0;
+    h[4]=(h[4]+e)|0;h[5]=(h[5]+f)|0;h[6]=(h[6]+g)|0;h[7]=(h[7]+hh)|0;}
+  return h.map(x=>((x>>>0).toString(16).padStart(8,'0'))).join('');
+}
+
+/* ══════════════════════════════════════════════ */
+firebase.initializeApp(CONFIG.firebase);
+const db = firebase.firestore();
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+
+const state = { dates:[], monthKeys:[], month:null, res:{}, taken:{}, blocks:{}, people:[], view:'board', q:'' };
+
+const store = (()=>{ try{localStorage.setItem('__t','1');localStorage.removeItem('__t');return localStorage;}
+  catch(e){const m={};return{getItem:k=>m[k]??null,setItem:(k,v)=>{m[k]=String(v);},removeItem:k=>{delete m[k];}};} })();
+
+const pad = n => String(n).padStart(2,'0');
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const parseKey = k => { const [y,m,d]=k.split('-').map(Number); return new Date(y,m-1,d); };
+const slotId = (d,t) => `${d}_${t}`;
+const dowKr = k => '일월화수목금토'[parseKey(k).getDay()];
+const label = k => `${parseKey(k).getMonth()+1}월 ${parseKey(k).getDate()}일 (${dowKr(k)})`;
+const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const todayKey = () => keyOf(new Date());
+
+function buildDates(){
+  const out=[]; const end=parseKey(CONFIG.seasonEnd);
+  for(let d=parseKey(CONFIG.seasonStart); d<=end; d.setDate(d.getDate()+1))
+    if(CONFIG.openDays.includes(d.getDay())) out.push(keyOf(d));
+  state.dates=out;
+  state.monthKeys=[...new Set(out.map(k=>k.slice(0,7)))];
+  const now=todayKey().slice(0,7);
+  state.month = state.monthKeys.includes(now) ? now : state.monthKeys[0];
+}
+
+function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2200); }
+
+/* ══════════ 데이터 ══════════ */
+async function loadAll(){
+  const [r,s,b,p] = await Promise.all([
+    db.collection(CONFIG.col.reservations).get(),
+    db.collection(CONFIG.col.slots).get(),
+    db.collection(CONFIG.col.blocks).get(),
+    db.collection(CONFIG.col.supporters).get()
+  ]);
+  state.res={}; r.forEach(d=>{ state.res[d.id]={ id:d.id, ...d.data() }; });
+  state.taken={}; s.forEach(d=>{ state.taken[d.id]=d.data().taken||0; });
+  state.blocks={}; b.forEach(d=>{ const v=d.data(); state.blocks[v.time?slotId(v.date,v.time):v.date]=d.id; });
+  state.people=[]; p.forEach(d=>state.people.push({ id:d.id, ...d.data() }));
+  state.people.sort((a,b2)=>String(a.code).localeCompare(String(b2.code)));
+  render();
+}
+
+const resAt = (d,t) => Object.values(state.res).find(x=>x.date===d&&x.time===t) || null;
+const isBlocked = (d,t) => (d in state.blocks) || (slotId(d,t) in state.blocks);
+const dayBlocked = d => d in state.blocks;
+
+/* ══════════ 그리기 ══════════ */
+function render(){ renderStats(); renderMonths(); renderDays(); renderList(); renderPeople(); }
+
+function renderStats(){
+  const total = state.dates.length * CONFIG.times.length;
+  const booked = Object.keys(state.res).length;
+  const confirmed = Object.values(state.res).filter(r=>r.status==='confirmed').length;
+  let blocked=0, open=0;
+  state.dates.forEach(d=>CONFIG.times.forEach(t=>{
+    if(isBlocked(d,t)) blocked++; else if(!resAt(d,t)) open++;
+  }));
+  $('#stats').innerHTML = `
+    <div class="stat"><dt>공연일</dt><dd>${state.dates.length}<small>일</small></dd></div>
+    <div class="stat"><dt>전체 회차</dt><dd>${total}<small>회</small></dd></div>
+    <div class="stat"><dt>예약</dt><dd>${booked}<small>건</small></dd></div>
+    <div class="stat"><dt>확정</dt><dd>${confirmed}<small>건</small></dd></div>
+    <div class="stat"><dt>열려 있음</dt><dd>${open}<small>회</small></dd></div>
+    <div class="stat"><dt>막아둠</dt><dd>${blocked}<small>회</small></dd></div>
+    <div class="stat"><dt>후원자</dt><dd>${state.people.length}<small>명</small></dd></div>`;
+}
+
+function renderMonths(){
+  const names=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+  $('#months').innerHTML='';
+  state.monthKeys.forEach(mk=>{
+    const b=document.createElement('button');
+    b.className='month-tab'+(mk===state.month?' on':'');
+    b.innerHTML=`${names[Number(mk.slice(5))-1]} <span style="font-family:var(--sans);font-size:11.5px;letter-spacing:0">${Number(mk.slice(5))}월</span>`;
+    b.onclick=()=>{ state.month=mk; renderMonths(); renderDays(); };
+    $('#months').appendChild(b);
+  });
+}
+
+function renderDays(){
+  const box=$('#days'); box.innerHTML='';
+  const list=state.dates.filter(k=>k.slice(0,7)===state.month);
+  const tk=todayKey();
+  list.forEach(d=>{
+    const card=document.createElement('article');
+    const blocked=dayBlocked(d);
+    card.className='daycard'+(blocked?' allblocked':'');
+    const cnt=CONFIG.times.filter(t=>resAt(d,t)).length;
+    card.innerHTML=`
+      <div class="dayhead">
+        <h3>${parseKey(d).getMonth()+1}월 ${parseKey(d).getDate()}일<em>${dowKr(d)}요일</em></h3>
+        ${d===tk?'<span class="today">TODAY</span>':(d<tk?'<span class="past">지난 날짜</span>':'')}
+        <span class="cnt">${cnt} / ${CONFIG.times.length}</span>
+        <div class="acts">
+          ${blocked
+            ? `<button class="mini go" data-act="dayopen" data-d="${d}">이 날 차단 풀기</button>`
+            : `<button class="mini warn" data-act="dayblock" data-d="${d}">이 날 전체 막기</button>`}
+        </div>
+      </div>
+      <div class="cells">${CONFIG.times.map((t,i)=>cellHtml(d,t,i)).join('')}</div>`;
+    box.appendChild(card);
+  });
+  if(!list.length) box.innerHTML='<p class="empty-state">이 달에는 공연일이 없습니다.</p>';
+  bindActs(box);
+}
+
+function cellHtml(d,t,i){
+  const r=resAt(d,t);
+  const slotBlocked = slotId(d,t) in state.blocks;
+  const whole = dayBlocked(d);
+  if(r){
+    const ok = r.status==='confirmed';
+    return `<div class="cell taken">
+      <span class="tent">${i+1}</span>
+      <div class="body">
+        <div class="time">${t}</div>
+        <div class="who"><b>${esc(r.nickname)}</b></div>
+        <div class="code">${esc(r.code||r.id)}</div>
+        <span class="pill ${ok?'ok':'wait'}">${ok?'확정':'대기'}</span>
+        <div class="acts">
+          <button class="mini ${ok?'':'go'}" data-act="status" data-id="${r.id}">${ok?'대기로':'확정'}</button>
+          <button class="mini" data-act="move" data-id="${r.id}">옮기기</button>
+          <button class="mini warn" data-act="cancel" data-id="${r.id}">취소</button>
+        </div>
+      </div></div>`;
+  }
+  if(whole || slotBlocked){
+    return `<div class="cell blocked">
+      <span class="tent">${i+1}</span>
+      <div class="body">
+        <div class="time">${t}</div>
+        <div class="note">${whole?'이 날 전체 차단':'차단됨'}</div>
+        <div class="acts">
+          ${whole?'':`<button class="mini go" data-act="unblock" data-d="${d}" data-t="${t}">풀기</button>`}
+        </div>
+      </div></div>`;
+  }
+  return `<div class="cell empty">
+    <span class="tent">${i+1}</span>
+    <div class="body">
+      <div class="time">${t}</div>
+      <div class="note">비어 있음</div>
+      <div class="acts">
+        <button class="mini" data-act="add" data-d="${d}" data-t="${t}">예약 넣기</button>
+        <button class="mini warn" data-act="block" data-d="${d}" data-t="${t}">막기</button>
+      </div>
+    </div></div>`;
+}
+
+function renderList(){
+  const q=state.q.trim().toLowerCase();
+  let rows=Object.values(state.res).sort((a,b)=> (a.date+a.time) < (b.date+b.time) ? -1 : 1);
+  if(q) rows=rows.filter(r=>[r.code,r.id,r.nickname,r.date,r.time].join(' ').toLowerCase().includes(q));
+  if(!rows.length){ $('#listBox').innerHTML='<p class="empty-state">예약이 없습니다.</p>'; return; }
+  $('#listBox').innerHTML=`<table>
+    <thead><tr><th>날짜</th><th>시간</th><th>후원번호</th><th>닉네임</th><th>상태</th><th>신청</th><th></th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td>${label(r.date)}</td>
+      <td style="font-family:var(--tag);font-size:15px;letter-spacing:.06em">${r.time}</td>
+      <td style="font-family:var(--tag);letter-spacing:.08em;color:var(--dust)">${esc(r.code||r.id)}</td>
+      <td>${esc(r.nickname)}</td>
+      <td><span class="pill ${r.status==='confirmed'?'ok':'wait'}" style="margin:0">${r.status==='confirmed'?'확정':'대기'}</span></td>
+      <td style="color:var(--dust-dim);font-size:12px">${fmtTime(r.createdAt)}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="mini" data-act="move" data-id="${r.id}">옮기기</button>
+        <button class="mini warn" data-act="cancel" data-id="${r.id}">취소</button>
+      </td></tr>`).join('')}</tbody></table>`;
+  bindActs($('#listBox'));
+}
+
+function fmtTime(ts){
+  if(!ts||!ts.toDate) return '—';
+  const d=ts.toDate();
+  return `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderPeople(){
+  $('#peopleCount').textContent=state.people.length;
+  const rows=state.people.map(p=>{
+    const r=state.res[p.code];
+    return `<tr>
+      <td style="font-family:var(--tag);letter-spacing:.08em">${esc(p.code)}</td>
+      <td>${esc(p.nickname)}</td>
+      <td style="color:${r?'var(--lamp)':'var(--dust-dim)'};font-size:12.5px">${r?label(r.date)+' '+r.time:'미예약'}</td>
+      <td style="text-align:right"><button class="mini warn" data-act="delperson" data-id="${esc(p.id)}">삭제</button></td>
+    </tr>`;}).join('');
+  $('#peopleTable').innerHTML = state.people.length
+    ? `<thead><tr><th>후원번호</th><th>닉네임</th><th>예약</th><th></th></tr></thead><tbody>${rows}</tbody>`
+    : `<tbody><tr><td colspan="4" class="empty-state">아직 등록된 후원자가 없습니다.</td></tr></tbody>`;
+  bindActs($('#peopleTable'));
+}
+
+/* ══════════ 동작 연결 ══════════ */
+function bindActs(root){
+  root.querySelectorAll('[data-act]').forEach(el=>{
+    el.onclick=()=>{
+      const a=el.dataset;
+      ({
+        status:   ()=>toggleStatus(a.id),
+        cancel:   ()=>askCancel(a.id),
+        move:     ()=>askMove(a.id),
+        add:      ()=>askAdd(a.d,a.t),
+        block:    ()=>run(()=>blockSlot(a.d,a.t), '막았습니다'),
+        unblock:  ()=>run(()=>unblockSlot(a.d,a.t), '풀었습니다'),
+        dayblock: ()=>askDayBlock(a.d),
+        dayopen:  ()=>run(()=>unblockDay(a.d), '풀었습니다'),
+        delperson:()=>askDelPerson(a.id)
+      })[a.act]();
+    };
+  });
+}
+
+async function run(fn, okMsg){
+  try { await fn(); await loadAll(); if(okMsg) toast(okMsg); }
+  catch(e){ console.error(e); toast('처리하지 못했습니다'); }
+}
+
+/* ══════════ 모달 ══════════ */
+let vAction=null;
+function openV(title, body, yesText, action, extraHtml){
+  $('#vTitle').textContent=title;
+  $('#vBody').textContent=body||'';
+  $('#vExtra').innerHTML=extraHtml||'';
+  $('#vYes').textContent=yesText||'확인';
+  $('#vYes').disabled=false;
+  $('#vYes').hidden=!action;
+  $('#vMsg').textContent=''; $('#vMsg').className='msg';
+  vAction=action;
+  $('#veil').classList.add('open');
+  const f=$('#vExtra').querySelector('input,select,textarea');
+  (f||$('#vYes')).focus();
+}
+const closeV=()=>{ $('#veil').classList.remove('open'); vAction=null; };
+$('#vNo').onclick=closeV;
+$('#veil').onclick=e=>{ if(e.target===$('#veil')) closeV(); };
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeV(); });
+$('#vYes').onclick=async()=>{
+  if(!vAction){ closeV(); return; }
+  $('#vYes').disabled=true;
+  $('#vMsg').className='msg'; $('#vMsg').innerHTML='<span class="spin"></span>처리하는 중';
+  try{ const t=await vAction(); closeV(); await loadAll(); if(t) toast(t); }
+  catch(e){
+    console.error(e);
+    $('#vMsg').className='msg err';
+    $('#vMsg').textContent = e.message==='FULL' ? '그 회차에는 이미 예약이 있습니다.'
+                          : e.message==='NOCODE' ? '후원번호와 닉네임을 모두 입력해 주세요.'
+                          : '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+    $('#vYes').disabled=false;
+  }
+};
+
+/* ══════════ 예약 조작 ══════════ */
+async function toggleStatus(id){
+  const r=state.res[id];
+  await db.collection(CONFIG.col.reservations).doc(id)
+    .update({ status: r.status==='confirmed' ? 'pending' : 'confirmed' });
+  await loadAll();
+  toast(r.status==='confirmed' ? '대기로 되돌렸습니다' : '확정했습니다');
+}
+
+function askCancel(id){
+  const r=state.res[id];
+  openV('예약을 취소할까요?',
+    `${label(r.date)} ${r.time} · ${r.nickname} (${r.code||r.id})\n예약이 지워지고 그 회차가 다시 열립니다.`,
+    '취소하기', async()=>{ await cancelRes(id); return '취소했습니다'; });
+}
+
+async function cancelRes(id){
+  const ref=db.collection(CONFIG.col.reservations).doc(id);
+  await db.runTransaction(async t=>{
+    const snap=await t.get(ref); if(!snap.exists) return;
+    const v=snap.data();
+    const sref=db.collection(CONFIG.col.slots).doc(slotId(v.date,v.time));
+    const ssnap=await t.get(sref);
+    const taken=ssnap.exists?(ssnap.data().taken||0):0;
+    t.set(sref,{ date:v.date, time:v.time, taken:Math.max(0,taken-1) },{merge:true});
+    t.delete(ref);
+  });
+}
+
+function slotOptions(sel){
+  return `<div class="field"><label class="lab">날짜</label>
+      <select id="mvDate">${state.dates.map(d=>`<option value="${d}"${d===sel.date?' selected':''}>${label(d)}</option>`).join('')}</select></div>
+    <div class="field"><label class="lab">시간</label>
+      <select id="mvTime">${CONFIG.times.map(t=>`<option value="${t}"${t===sel.time?' selected':''}>${t}</option>`).join('')}</select></div>`;
+}
+
+function askMove(id){
+  const r=state.res[id];
+  openV('예약 옮기기', `${r.nickname} (${r.code||r.id}) · 지금은 ${label(r.date)} ${r.time}`,
+    '옮기기',
+    async()=>{
+      const d=$('#mvDate').value, t=$('#mvTime').value;
+      await moveRes(id,d,t);
+      return '옮겼습니다';
+    },
+    slotOptions(r));
+}
+
+async function moveRes(id, date, time){
+  const ref=db.collection(CONFIG.col.reservations).doc(id);
+  await db.runTransaction(async t=>{
+    const snap=await t.get(ref); if(!snap.exists) throw new Error('GONE');
+    const v=snap.data();
+    if(v.date===date && v.time===time) return;
+    const target=db.collection(CONFIG.col.slots).doc(slotId(date,time));
+    const tSnap=await t.get(target);
+    const from=db.collection(CONFIG.col.slots).doc(slotId(v.date,v.time));
+    const fSnap=await t.get(from);
+    if((tSnap.exists?(tSnap.data().taken||0):0) >= CONFIG.capacity) throw new Error('FULL');
+    t.set(target,{ date, time, taken:(tSnap.exists?(tSnap.data().taken||0):0)+1 },{merge:true});
+    t.set(from,{ taken:Math.max(0,(fSnap.exists?(fSnap.data().taken||0):0)-1) },{merge:true});
+    t.set(ref,{ date, time, updatedAt:firebase.firestore.FieldValue.serverTimestamp() },{merge:true});
+  });
+}
+
+function askAdd(date,time){
+  openV('예약 넣기', `${label(date)} ${time} 회차에 직접 예약을 넣습니다.`, '넣기',
+    async()=>{
+      const code=$('#adCode').value.trim(), nick=$('#adNick').value.trim();
+      if(!code||!nick) throw new Error('NOCODE');
+      await addRes(code,nick,date,time);
+      return '넣었습니다';
+    },
+    `<div class="field"><label class="lab">후원번호</label><input type="text" id="adCode" autocomplete="off"></div>
+     <div class="field"><label class="lab">닉네임</label><input type="text" id="adNick" autocomplete="off"></div>
+     <p style="color:var(--dust-dim);font-size:12px;margin:0">이미 다른 회차에 예약이 있는 후원번호라면 이 회차로 옮겨집니다.</p>`);
+}
+
+async function addRes(code, nick, date, time){
+  const ref=db.collection(CONFIG.col.reservations).doc(code);
+  await db.runTransaction(async t=>{
+    const snap=await t.get(ref);
+    const target=db.collection(CONFIG.col.slots).doc(slotId(date,time));
+    const tSnap=await t.get(target);
+    let fromRef=null, fromTaken=0;
+    if(snap.exists){
+      const v=snap.data();
+      if(!(v.date===date&&v.time===time)){
+        fromRef=db.collection(CONFIG.col.slots).doc(slotId(v.date,v.time));
+        const fs=await t.get(fromRef);
+        fromTaken=fs.exists?(fs.data().taken||0):0;
+      }
+    }
+    const taken=tSnap.exists?(tSnap.data().taken||0):0;
+    if(taken>=CONFIG.capacity && !(snap.exists && snap.data().date===date && snap.data().time===time)) throw new Error('FULL');
+    t.set(target,{ date, time, taken:taken+1 },{merge:true});
+    if(fromRef) t.set(fromRef,{ taken:Math.max(0,fromTaken-1) },{merge:true});
+    t.set(ref,{ code, nickname:nick, date, time,
+      status: snap.exists?(snap.data().status||'pending'):'pending',
+      createdAt: snap.exists?snap.data().createdAt:firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      byAdmin:true },{merge:true});
+  });
+}
+
+/* ══════════ 차단 ══════════ */
+const blockRef = id => db.collection(CONFIG.col.blocks).doc(id);
+
+async function blockSlot(d,t){
+  if(resAt(d,t)) throw new Error('HASRES');
+  await blockRef(slotId(d,t)).set({ date:d, time:t, createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+}
+async function unblockSlot(d,t){ await blockRef(slotId(d,t)).delete(); }
+
+function askDayBlock(d){
+  const has=CONFIG.times.filter(t=>resAt(d,t));
+  openV('이 날을 전부 막을까요?',
+    has.length
+      ? `${label(d)}에 예약이 ${has.length}건 있습니다. 이 날을 막아도 기존 예약은 남으니, 필요하면 먼저 옮기거나 취소해 주세요.`
+      : `${label(d)} 세 회차 모두 예약이 막힙니다.`,
+    '막기', async()=>{ await blockDay(d); return '막았습니다'; });
+}
+async function blockDay(d){
+  await blockRef(d).set({ date:d, createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+}
+async function unblockDay(d){
+  const batch=db.batch();
+  batch.delete(blockRef(d));
+  CONFIG.times.forEach(t=>{ if(slotId(d,t) in state.blocks) batch.delete(blockRef(slotId(d,t))); });
+  await batch.commit();
+}
+
+function scopeDates(scope){ return scope==='month' ? state.dates.filter(k=>k.slice(0,7)===state.month) : state.dates; }
+
+function askBlockEmpty(scope){
+  const dates=scopeDates(scope);
+  let n=0; dates.forEach(d=>CONFIG.times.forEach(t=>{ if(!resAt(d,t)&&!isBlocked(d,t)) n++; }));
+  openV(scope==='month'?'이 달 빈 회차를 전부 막을까요?':'시즌 전체 빈 회차를 전부 막을까요?',
+    n ? `예약이 없는 ${n}개 회차가 막힙니다. 이미 잡힌 예약은 건드리지 않습니다.` : '막을 빈 회차가 없습니다.',
+    '전부 막기',
+    n ? async()=>{ await blockEmpty(dates); return `${n}개 회차를 막았습니다`; } : null);
+}
+async function blockEmpty(dates){
+  let batch=db.batch(), n=0;
+  for(const d of dates) for(const t of CONFIG.times){
+    if(resAt(d,t)||isBlocked(d,t)) continue;
+    batch.set(blockRef(slotId(d,t)),{ date:d, time:t });
+    if(++n%400===0){ await batch.commit(); batch=db.batch(); }
+  }
+  if(n%400!==0) await batch.commit();
+}
+
+function askOpenAll(scope){
+  const dates=new Set(scopeDates(scope));
+  const ids=Object.entries(state.blocks).filter(([k])=>dates.has(k.slice(0,10))).map(([,id])=>id);
+  openV(scope==='month'?'이 달 차단을 전부 풀까요?':'시즌 전체 차단을 전부 풀까요?',
+    ids.length?`막아둔 ${ids.length}건이 모두 풀려 예약을 받게 됩니다.`:'풀 차단이 없습니다.',
+    '전부 풀기',
+    ids.length?async()=>{ await deleteIds(ids); return `${ids.length}건을 풀었습니다`; }:null);
+}
+async function deleteIds(ids){
+  let batch=db.batch(), n=0;
+  for(const id of ids){ batch.delete(blockRef(id)); if(++n%400===0){ await batch.commit(); batch=db.batch(); } }
+  if(n%400!==0) await batch.commit();
+}
+
+$('#blockMonth').onclick=()=>askBlockEmpty('month');
+$('#openMonth').onclick =()=>askOpenAll('month');
+$('#blockAll').onclick  =()=>askBlockEmpty('all');
+$('#openAll').onclick   =()=>askOpenAll('all');
+
+/* ══════════ 후원자 명단 ══════════ */
+$('#addPeople').onclick=async()=>{
+  const msg=$('#peopleMsg'); msg.className='msg';
+  const lines=$('#bulk').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  if(!lines.length){ msg.classList.add('err'); msg.textContent='등록할 내용을 넣어 주세요.'; return; }
+  const rows=[];
+  for(const line of lines){
+    const p=line.split(/[,\t]/).map(s=>s.trim());
+    if(p.length<2||!p[0]||!p[1]){ msg.classList.add('err'); msg.textContent=`형식을 확인해 주세요 : ${line}`; return; }
+    rows.push({ code:p[0], nickname:p[1] });
+  }
+  msg.innerHTML='<span class="spin"></span>등록하는 중';
+  try{
+    const batch=db.batch();
+    rows.forEach(r=>batch.set(db.collection(CONFIG.col.supporters).doc(r.code),
+      { code:r.code, nickname:r.nickname, createdAt:firebase.firestore.FieldValue.serverTimestamp() },{merge:true}));
+    await batch.commit();
+    $('#bulk').value='';
+    await loadAll();
+    msg.className='msg ok'; msg.textContent=`${rows.length}명을 등록했습니다.`;
+  }catch(e){ console.error(e); msg.className='msg err'; msg.textContent='등록하지 못했습니다.'; }
+};
+
+function askDelPerson(id){
+  const p=state.people.find(x=>x.id===id);
+  openV('명단에서 지울까요?',
+    `${p.code} · ${p.nickname}\n이후로는 이 번호로 체크인할 수 없습니다. 이미 잡아둔 예약은 그대로 남습니다.`,
+    '지우기', async()=>{ await db.collection(CONFIG.col.supporters).doc(id).delete(); return '지웠습니다'; });
+}
+
+/* ══════════ 도구 ══════════ */
+$('#hashBtn').onclick=()=>{
+  const v=$('#newPw').value;
+  if(!v) return;
+  $('#hashOut').value=sha256(v);
+  $('#hashOut').select();
+};
+
+$('#recalcBtn').onclick=async()=>{
+  const msg=$('#recalcMsg'); msg.className='msg';
+  msg.innerHTML='<span class="spin"></span>다시 세는 중';
+  try{
+    const want={};
+    Object.values(state.res).forEach(r=>{ want[slotId(r.date,r.time)]=(want[slotId(r.date,r.time)]||0)+1; });
+    const ids=new Set([...Object.keys(state.taken), ...Object.keys(want)]);
+    let batch=db.batch(), n=0, fixed=0;
+    for(const id of ids){
+      const should=want[id]||0;
+      if((state.taken[id]||0)===should) continue;
+      const [d,t]=[id.slice(0,10), id.slice(11)];
+      batch.set(db.collection(CONFIG.col.slots).doc(id),{ date:d, time:t, taken:should },{merge:true});
+      fixed++;
+      if(++n%400===0){ await batch.commit(); batch=db.batch(); }
+    }
+    if(n%400!==0) await batch.commit();
+    await loadAll();
+    msg.className='msg ok'; msg.textContent = fixed?`${fixed}개 회차를 맞췄습니다.`:'모두 정확합니다.';
+  }catch(e){ console.error(e); msg.className='msg err'; msg.textContent='실행하지 못했습니다.'; }
+};
+
+$('#csvBtn').onclick=()=>{
+  const rows=Object.values(state.res).sort((a,b)=>(a.date+a.time)<(b.date+b.time)?-1:1);
+  const csv=['날짜,요일,시간,후원번호,닉네임,상태']
+    .concat(rows.map(r=>[r.date,dowKr(r.date),r.time,r.code||r.id,`"${String(r.nickname).replace(/"/g,'""')}"`,r.status==='confirmed'?'확정':'대기'].join(',')))
+    .join('\n');
+  const url=URL.createObjectURL(new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'}));
+  const a=document.createElement('a');
+  a.href=url; a.download=`aim-예약-${todayKey()}.csv`; a.click();
+  URL.revokeObjectURL(url);
+};
+
+/* ══════════ 탭 · 검색 ══════════ */
+$$('.tab').forEach(t=>t.onclick=()=>{
+  $$('.tab').forEach(x=>x.classList.toggle('on',x===t));
+  state.view=t.dataset.view;
+  ['board','list','people','tools'].forEach(v=>{ $('#view-'+v).hidden = v!==state.view; });
+});
+$('#q').oninput=e=>{ state.q=e.target.value; renderList(); };
+
+/* ══════════ 로그인 ══════════ */
+async function unlock(){
+  const msg=$('#pwMsg'); msg.className='msg';
+  const v=$('#pw').value;
+  if(sha256(v)!==CONFIG.adminHash){ msg.classList.add('err'); msg.textContent='비밀번호가 맞지 않습니다.'; return; }
+  store.setItem('aimAdmin', CONFIG.adminHash);
+  $('#gate').hidden=true; $('#app').hidden=false;
+  msg.innerHTML='';
+  buildDates();
+  try{ await loadAll(); }catch(e){ console.error(e); toast('데이터를 불러오지 못했습니다'); }
+}
+$('#pwBtn').onclick=unlock;
+$('#pw').addEventListener('keydown',e=>{ if(e.key==='Enter') unlock(); });
+$('#lockBtn').onclick=()=>{ store.removeItem('aimAdmin'); location.reload(); };
+$('#reloadBtn').onclick=()=>run(()=>Promise.resolve(),'새로고침했습니다');
+
+if(store.getItem('aimAdmin')===CONFIG.adminHash){
+  $('#gate').hidden=true; $('#app').hidden=false;
+  buildDates(); loadAll().catch(e=>{ console.error(e); toast('데이터를 불러오지 못했습니다'); });
+}
+</script>
+</body>
+</html>
