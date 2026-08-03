@@ -78,7 +78,8 @@ input[type=datetime-local]{color-scheme:dark;}
 label.lab{display:block; font-family:var(--tag); font-size:12px; letter-spacing:.2em; color:var(--dust); margin-bottom:6px;}
 
 /* 로그인 */
-#gate{max-width:420px; margin:14vh auto; border:1px solid var(--line);
+#gate{position:relative; z-index:1;   /* 고정 배경 레이어 위로 올림 */
+  max-width:420px; margin:14vh auto; border:1px solid var(--line);
   background:linear-gradient(180deg,var(--panel-2),var(--panel)); padding:30px;}
 #gate h2{font-family:var(--serif); margin:0 0 6px; font-size:19px;}
 #gate p.sub{color:var(--dust); font-size:13px; margin:0 0 22px;}
@@ -185,6 +186,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
 </style>
 </head>
 <body>
+<noscript><div style="background:#7d2517;color:#fff;padding:14px 18px;text-align:center;font-family:sans-serif;font-size:14px">
+이 페이지는 자바스크립트가 켜져 있어야 예약을 받을 수 있습니다.</div></noscript>
+<div id="netBar" hidden style="background:#7d2517;color:#ffe9e2;padding:12px 18px;text-align:center;font-size:13.5px;position:relative;z-index:99">
+  예약 서버에 연결하지 못했습니다. 인터넷 연결을 확인하고 페이지를 새로고침해 주세요.
+</div>
 
 <!-- 로그인 -->
 <div id="gate">
@@ -381,8 +387,14 @@ function sha256(ascii){
 }
 
 /* ══════════════════════════════════════════════ */
-firebase.initializeApp(CONFIG.firebase);
-const db = firebase.firestore();
+let db = null, netOk = true;
+try {
+  firebase.initializeApp(CONFIG.firebase);
+  db = firebase.firestore();
+} catch (e) {
+  netOk = false;
+  console.error('Firebase 초기화 실패:', e);
+}
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 
@@ -998,6 +1010,20 @@ if(store.getItem('aimAdmin')===CONFIG.adminHash){
   $('#gate').hidden=true; $('#app').hidden=false;
   buildDates(); syncClock().then(loadAll).catch(e=>{ console.error(e); toast('데이터를 불러오지 못했습니다'); });
 }
+
+/* 연결 실패를 화면에 알림 (조용히 빈 화면이 되지 않도록) */
+if (!netOk) {
+  const bar = document.getElementById('netBar');
+  if (bar) bar.hidden = false;
+  const b = document.querySelector('#pwBtn');
+  if (b) b.disabled = true;
+}
+window.addEventListener('error', e => {
+  if (e.message && /firebase|is not defined/i.test(e.message)) {
+    const bar = document.getElementById('netBar');
+    if (bar) bar.hidden = false;
+  }
+});
 </script>
 </body>
 </html>
