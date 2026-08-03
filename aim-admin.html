@@ -236,10 +236,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
     <div class="bar">
       <div class="months" id="months"></div>
       <div class="sep"></div>
-      <button class="mini warn" id="blockMonth">이 달 빈 회차 전부 막기</button>
+      <button class="mini warn" id="blockMonth">이 달 빈 회차 잠가두기</button>
       <button class="mini go" id="openMonth">이 달 차단 전부 풀기</button>
       <div class="sep"></div>
-      <button class="mini warn" id="blockAll">시즌 전체 빈 회차 막기</button>
+      <button class="mini warn" id="blockAll">시즌 전체 잠가두기</button>
       <button class="mini go" id="openAll">시즌 전체 차단 풀기</button>
     </div>
     <div class="days" id="days"></div>
@@ -288,11 +288,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
             <label class="lab" for="openAtInput">오픈 시각</label>
             <input type="datetime-local" id="openAtInput">
           </div>
-          <label class="check" style="margin:0 0 10px">
-            <input type="checkbox" id="releaseChk">
-            <span>오픈 시각에 <b style="color:var(--bone)">지금 막아둔 회차를 전부 자동으로 풀기</b><br>
-            <span style="color:var(--dust-dim);font-size:12px">미리 전부 막아두고 오픈과 동시에 한꺼번에 여는 방식입니다. 오픈 이후에 새로 막는 회차는 그대로 유지됩니다.</span></span>
-          </label>
+          <p style="color:var(--dust-dim);font-size:12.5px;margin:0 0 12px">
+            오픈 시각이 되면 <b style="color:var(--bone)">오픈 대기 잠금만</b> 자동으로 풀립니다.<br>
+            휴관으로 막아둔 날과 회차는 그대로 유지됩니다.
+          </p>
         </div>
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:18px">
           <button class="btn" id="saveOpen">저장</button>
@@ -371,8 +370,8 @@ try {
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 
-const state = { dates:[], monthKeys:[], month:null, res:{}, taken:{}, blocks:{}, blockAt:{}, people:[],
-                view:'board', q:'', openAt:null, releaseOnOpen:false, offset:0, tick:null };
+const state = { dates:[], monthKeys:[], month:null, res:{}, taken:{}, blocks:{}, blockKind:{}, people:[],
+                view:'board', q:'', openAt:null, offset:0, tick:null };
 
 const store = (()=>{ try{localStorage.setItem('__t','1');localStorage.removeItem('__t');return localStorage;}
   catch(e){const m={};return{getItem:k=>m[k]??null,setItem:(k,v)=>{m[k]=String(v);},removeItem:k=>{delete m[k];}};} })();
@@ -406,8 +405,8 @@ async function syncClock(){
 }
 const now=()=>Date.now()+state.offset;
 const isOpen=()=>!state.openAt||now()>=state.openAt;
-/* 오픈 시각에 자동 해제될 차단인지 */
-const willRelease=k=>state.releaseOnOpen&&(state.blockAt[k]||0)<(state.openAt||0);
+/* 오픈 때 자동으로 풀리는 대기 잠금인지 */
+const isHold=k=>state.blockKind[k]==='hold';
 
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2200); }
 
@@ -422,20 +421,22 @@ async function loadAll(){
   ]);
   const cfg = c.exists ? c.data() : {};
   state.openAt = (cfg.openAt && cfg.openAt.toDate) ? cfg.openAt.toDate().getTime() : null;
-  state.releaseOnOpen = !!cfg.releaseBlocksOnOpen;
-  state.res={}; r.forEach(d=>{ state.res[d.id]={ id:d.id, ...d.data() }; });
+  state.res={}; r.forEach(d=>{ const v=d.data();
+    if(v.status!=='cancelled') state.res[d.id]={ id:d.id, ...v };   // 취소된 예약은 빈 회차로 본다
+  });
   state.taken={}; s.forEach(d=>{ state.taken[d.id]=d.data().taken||0; });
-  state.blocks={}; state.blockAt={};
+  state.blocks={}; state.blockKind={};
   b.forEach(d=>{ const v=d.data(); const k=v.time?slotId(v.date,v.time):v.date;
     state.blocks[k]=d.id;
-    state.blockAt[k]=(v.createdAt&&v.createdAt.toDate)?v.createdAt.toDate().getTime():0; });
+    state.blockKind[k]=v.kind||'closed';   // hold = 오픈 대기 잠금, closed = 휴관
+  });
   state.people=[]; p.forEach(d=>state.people.push({ id:d.id, ...d.data() }));
   state.people.sort((a,b2)=>String(a.code).localeCompare(String(b2.code)));
   render();
 }
 
 const resAt = (d,t) => Object.values(state.res).find(x=>x.date===d&&x.time===t) || null;
-const liveBlock = k => (k in state.blocks) && !(willRelease(k) && isOpen());
+const liveBlock = k => (k in state.blocks) && !(isHold(k) && isOpen());
 const isBlocked = (d,t) => liveBlock(d) || liveBlock(slotId(d,t));
 const dayBlocked = d => liveBlock(d);
 
@@ -446,9 +447,10 @@ function renderStats(){
   const total = state.dates.length * CONFIG.times.length;
   const booked = Object.keys(state.res).length;
   const confirmed = Object.values(state.res).filter(r=>r.status==='confirmed').length;
-  let blocked=0, open=0;
+  let blocked=0, open=0, holds=0;
   state.dates.forEach(d=>CONFIG.times.forEach(t=>{
-    if(isBlocked(d,t)) blocked++; else if(!resAt(d,t)) open++;
+    if(isBlocked(d,t)){ blocked++; if(isHold(d)||isHold(slotId(d,t))) holds++; }
+    else if(!resAt(d,t)) open++;
   }));
   $('#stats').innerHTML = `
     <div class="stat"><dt>공연일</dt><dd>${state.dates.length}<small>일</small></dd></div>
@@ -456,7 +458,7 @@ function renderStats(){
     <div class="stat"><dt>예약</dt><dd>${booked}<small>건</small></dd></div>
     <div class="stat"><dt>확정</dt><dd>${confirmed}<small>건</small></dd></div>
     <div class="stat"><dt>열려 있음</dt><dd>${open}<small>회</small></dd></div>
-    <div class="stat"><dt>막아둠</dt><dd>${blocked}<small>회</small></dd></div>
+    <div class="stat"><dt>막아둠</dt><dd>${blocked}<small>회${holds?` · 대기 ${holds}`:''}</small></dd></div>
     <div class="stat"><dt>후원자</dt><dd>${state.people.length}<small>명</small></dd></div>
     <div class="stat"><dt>예약 창구</dt><dd style="font-size:17px">${isOpen()?'열림':'대기'}<small>${isOpen()?'':fmtWhen(state.openAt)}</small></dd></div>`;
 }
@@ -525,7 +527,7 @@ function cellHtml(d,t,i){
       <span class="tent">${i+1}</span>
       <div class="body">
         <div class="time">${t}</div>
-        <div class="note">${whole?'이 날 전체 차단':'차단됨'}${(!isOpen()&&willRelease(whole?d:slotId(d,t)))?' · 오픈 때 자동 해제':''}</div>
+        <div class="note">${isHold(whole?d:slotId(d,t))?'오픈 대기 잠금 · 오픈 때 자동 해제':(whole?'이 날 휴관':'휴관')}</div>
         <div class="acts">
           ${whole?'':`<button class="mini go" data-act="unblock" data-d="${d}" data-t="${t}">풀기</button>`}
         </div>
@@ -666,11 +668,12 @@ async function cancelRes(id){
   await db.runTransaction(async t=>{
     const snap=await t.get(ref); if(!snap.exists) return;
     const v=snap.data();
+    if(v.status==='cancelled') return;
     const sref=db.collection(CONFIG.col.slots).doc(slotId(v.date,v.time));
     const ssnap=await t.get(sref);
     const taken=ssnap.exists?(ssnap.data().taken||0):0;
     t.set(sref,{ date:v.date, time:v.time, taken:Math.max(0,taken-1) },{merge:true});
-    t.delete(ref);
+    t.set(ref,{ status:'cancelled', updatedAt:firebase.firestore.FieldValue.serverTimestamp() },{merge:true});
   });
 }
 
@@ -729,8 +732,9 @@ async function addRes(code, nick, date, time){
     const snap=await t.get(ref);
     const target=db.collection(CONFIG.col.slots).doc(slotId(date,time));
     const tSnap=await t.get(target);
+    const wasLive = snap.exists && snap.data().status!=='cancelled';
     let fromRef=null, fromTaken=0;
-    if(snap.exists){
+    if(wasLive){
       const v=snap.data();
       if(!(v.date===date&&v.time===time)){
         fromRef=db.collection(CONFIG.col.slots).doc(slotId(v.date,v.time));
@@ -739,11 +743,11 @@ async function addRes(code, nick, date, time){
       }
     }
     const taken=tSnap.exists?(tSnap.data().taken||0):0;
-    if(taken>=CONFIG.capacity && !(snap.exists && snap.data().date===date && snap.data().time===time)) throw new Error('FULL');
+    if(taken>=CONFIG.capacity && !(wasLive && snap.data().date===date && snap.data().time===time)) throw new Error('FULL');
     t.set(target,{ date, time, taken:taken+1 },{merge:true});
     if(fromRef) t.set(fromRef,{ taken:Math.max(0,fromTaken-1) },{merge:true});
     t.set(ref,{ code, nickname:nick, date, time,
-      status: snap.exists?(snap.data().status||'pending'):'pending',
+      status: wasLive?(snap.data().status||'pending'):'pending',
       createdAt: snap.exists?snap.data().createdAt:firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       byAdmin:true },{merge:true});
@@ -755,7 +759,7 @@ const blockRef = id => db.collection(CONFIG.col.blocks).doc(id);
 
 async function blockSlot(d,t){
   if(resAt(d,t)) throw new Error('HASRES');
-  await blockRef(slotId(d,t)).set({ date:d, time:t, createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+  await blockRef(slotId(d,t)).set({ date:d, time:t, kind:'closed', createdAt:firebase.firestore.FieldValue.serverTimestamp() });
 }
 async function unblockSlot(d,t){ await blockRef(slotId(d,t)).delete(); }
 
@@ -768,7 +772,7 @@ function askDayBlock(d){
     '막기', async()=>{ await blockDay(d); return '막았습니다'; });
 }
 async function blockDay(d){
-  await blockRef(d).set({ date:d, createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+  await blockRef(d).set({ date:d, kind:'closed', createdAt:firebase.firestore.FieldValue.serverTimestamp() });
 }
 async function unblockDay(d){
   const batch=db.batch();
@@ -782,16 +786,17 @@ function scopeDates(scope){ return scope==='month' ? state.dates.filter(k=>k.sli
 function askBlockEmpty(scope){
   const dates=scopeDates(scope);
   let n=0; dates.forEach(d=>CONFIG.times.forEach(t=>{ if(!resAt(d,t)&&!isBlocked(d,t)) n++; }));
-  openV(scope==='month'?'이 달 빈 회차를 전부 막을까요?':'시즌 전체 빈 회차를 전부 막을까요?',
-    n ? `예약이 없는 ${n}개 회차가 막힙니다. 이미 잡힌 예약은 건드리지 않습니다.` : '막을 빈 회차가 없습니다.',
-    '전부 막기',
+  openV(scope==='month'?'이 달 빈 회차를 잠가둘까요?':'시즌 전체 빈 회차를 잠가둘까요?',
+    n ? `예약이 없는 ${n}개 회차가 오픈 대기 잠금으로 막힙니다.\n오픈 시각이 되면 자동으로 풀리고, 휴관으로 막아둔 회차는 그대로 남습니다.\n이미 잡힌 예약은 건드리지 않습니다.`
+      : '잠가둘 빈 회차가 없습니다.',
+    '잠가두기',
     n ? async()=>{ await blockEmpty(dates); return `${n}개 회차를 막았습니다`; } : null);
 }
 async function blockEmpty(dates){
   let batch=db.batch(), n=0;
   for(const d of dates) for(const t of CONFIG.times){
     if(resAt(d,t)||isBlocked(d,t)) continue;
-    batch.set(blockRef(slotId(d,t)),{ date:d, time:t, createdAt:firebase.firestore.FieldValue.serverTimestamp() });
+    batch.set(blockRef(slotId(d,t)),{ date:d, time:t, kind:'hold', createdAt:firebase.firestore.FieldValue.serverTimestamp() });
     if(++n%400===0){ await batch.commit(); batch=db.batch(); }
   }
   if(n%400!==0) await batch.commit();
@@ -877,13 +882,11 @@ function renderOpen(){
       inp.value=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     } else inp.value='';
   }
-  $('#releaseChk').checked=state.releaseOnOpen;
 }
 
 async function saveOpen(at){
   await db.collection(CONFIG.col.config).doc(CONFIG.configDoc).set({
     openAt: at ? firebase.firestore.Timestamp.fromDate(at) : null,
-    releaseBlocksOnOpen: $('#releaseChk').checked,
     updatedAt: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge:true });
   await loadAll();
@@ -900,13 +903,15 @@ $('#saveOpen').onclick=async()=>{
 };
 
 $('#openNow').onclick=()=>{
-  const blocked=Object.keys(state.blocks).length;
+  const holds=Object.keys(state.blocks).filter(isHold);
+  const closed=Object.keys(state.blocks).length-holds.length;
   openV('지금 바로 열까요?',
     '카운트다운 없이 곧바로 예약을 받기 시작합니다.'
-    + (blocked && $('#releaseChk').checked ? `\n막아둔 ${blocked}건도 함께 풀립니다.` : ''),
+    + (holds.length?`\n오픈 대기 잠금 ${holds.length}건이 풀립니다.`:'')
+    + (closed?`\n휴관으로 막아둔 ${closed}건은 그대로 유지됩니다.`:''),
     '열기',
     async()=>{
-      if($('#releaseChk').checked && blocked) await deleteIds(Object.values(state.blocks));
+      if(holds.length) await deleteIds(holds.map(k=>state.blocks[k]));
       await saveOpen(null);
       return '열었습니다';
     });
