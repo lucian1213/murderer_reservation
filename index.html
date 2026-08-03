@@ -464,8 +464,7 @@ const CONFIG = {
     reservations: 'aim_reservations',
     slots:        'aim_slots',
     blocks:       'aim_blocks',
-    config:       'aim_config',
-    meta:         'aim_meta'
+    config:       'aim_config'
   },
   configDoc: 'booking'   // 예약 오픈 시각이 담긴 문서 (관리자 페이지에서 설정)
 };
@@ -539,15 +538,16 @@ function weekendsOf(monthKey) {
     .map(([, row]) => row);
 }
 
-/* ── 서버 시계 맞추기 (기기 시각이 틀어져 있어도 오픈 시각이 흔들리지 않게) ── */
+/* ── 서버 시계 맞추기 ──
+   웹서버가 내려주는 Date 응답 헤더를 기준으로 기기 시계와의 차이를 잰다.
+   (파이어스토어에 쓰지 않으므로 수백 명이 동시에 들어와도 부담이 없다) */
 async function syncClock(){
   try{
-    const ref = db.collection(CONFIG.col.meta).doc('clock');
-    await ref.set({ t: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true });
-    const snap = await ref.get();
-    const t = snap.exists && snap.data().t;
-    if (t && t.toDate) state.offset = t.toDate().getTime() - Date.now();
-  }catch(e){ state.offset = 0; }
+    const res = await fetch(location.href, { method:'HEAD', cache:'no-store' });
+    const d = res.headers.get('date');
+    if (d) { state.offset = new Date(d).getTime() - Date.now(); return; }
+  }catch(e){}
+  state.offset = 0;
 }
 const now = () => Date.now() + state.offset;
 const isOpen = () => !state.openAt || now() >= state.openAt;
@@ -564,7 +564,7 @@ async function loadConfig(){
 /* ── 데이터 읽기 ── */
 async function loadAvailability() {
   const [slotSnap, blockSnap] = await Promise.all([
-    db.collection(CONFIG.col.slots).get(),
+    db.collection(CONFIG.col.slots).where('taken', '>', 0).get(),  // 찬 회차만 읽는다
     db.collection(CONFIG.col.blocks).get()
   ]);
   state.taken = {};
@@ -621,9 +621,10 @@ async function checkIn() {
   msg.innerHTML = '<span class="spin"></span>명단을 확인하는 중';
   try {
     if (!CONFIG.demoMode && !isMaster) {
-      const snap = await db.collection(CONFIG.col.supporters)
-        .where('code', '==', code).where('nickname', '==', nick).limit(1).get();
-      if (snap.empty) {
+      // 명단 전체를 훑지 않고 본인 문서 하나만 확인한다 (보안 규칙에서 목록 조회를 막을 수 있게)
+      const snap = await db.collection(CONFIG.col.supporters).doc(code).get();
+      const ok = snap.exists && String(snap.data().nickname || '').trim() === nick;
+      if (!ok) {
         msg.className = 'msg err';
         msg.textContent = '후원번호 또는 닉네임이 명단과 다릅니다. 후원 안내 메시지에 적힌 그대로 입력해 주세요.';
         return;
@@ -685,7 +686,13 @@ function renderGate(){
     + `${when.getMinutes() ? ' ' + when.getMinutes() + '분' : ''}에 열립니다`;
   const paint = () => {
     const gap = state.openAt - now();
-    if (gap <= 0) { refresh(); return; }
+    if (gap <= 0) {
+      if (state.tick) { clearInterval(state.tick); state.tick = null; }
+      $('#openCount').textContent = '00:00:00';
+      $('#openWhen').textContent = '지금 여는 중입니다…';
+      setTimeout(refresh, Math.random() * 3000);   // 한꺼번에 몰리지 않게 흩뿌린다
+      return;
+    }
     const s = Math.floor(gap/1000), d = Math.floor(s/86400);
     const hh = pad(Math.floor(s%86400/3600)), mm = pad(Math.floor(s%3600/60)), ss = pad(s%60);
     $('#openCount').textContent = (d ? `${d}일 ` : '') + `${hh}:${mm}:${ss}`;
@@ -848,7 +855,11 @@ $('#veilYes').onclick = async () => {
     $('#veilMsg').className = 'msg err';
     $('#veilMsg').textContent =
       e.message === 'FULL' ? '방금 이 회차가 마감되었습니다. 다른 시간을 골라 주세요.'
-                           : '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
+      : (e.code === 'aborted' || e.code === 'failed-precondition')
+        ? '같은 회차를 여러 분이 동시에 누르셨습니다. 화면을 새로 불러왔으니 다시 골라 주세요.'
+      : (e.code === 'unavailable' || e.code === 'deadline-exceeded')
+        ? '연결이 잠시 불안정합니다. 다시 눌러 주세요.'
+        : '처리하지 못했습니다. 잠시 후 다시 시도해 주세요.';
     console.error(e);
     btn.disabled = false;
     await refresh();
