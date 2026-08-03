@@ -490,7 +490,6 @@ const state = {
   blocks: {},          // '2026-08-14' 또는 '2026-08-14_10:00' -> 막은 시각(ms)
   mine: null,          // 내 예약 데이터
   openAt: null,        // 예약 오픈 시각(ms), null이면 항상 열림
-  releaseOnOpen: false,// 오픈 시각에 기존 차단을 자동으로 풀지
   offset: 0,           // 서버 시계와의 차이(ms)
   tick: null
 };
@@ -557,8 +556,7 @@ async function loadConfig(){
     const snap = await db.collection(CONFIG.col.config).doc(CONFIG.configDoc).get();
     const v = snap.exists ? snap.data() : {};
     state.openAt = (v.openAt && v.openAt.toDate) ? v.openAt.toDate().getTime() : null;
-    state.releaseOnOpen = !!v.releaseBlocksOnOpen;
-  }catch(e){ state.openAt = null; state.releaseOnOpen = false; }
+  }catch(e){ state.openAt = null; }
 }
 
 /* ── 데이터 읽기 ── */
@@ -572,14 +570,15 @@ async function loadAvailability() {
   state.blocks = {};
   blockSnap.forEach(doc => {
     const b = doc.data();
-    const at = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
-    state.blocks[b.time ? slotId(b.date, b.time) : b.date] = at;
+    // kind: 'hold' = 오픈 대기용 잠금(오픈 때 자동 해제), 그 외 = 휴관(오픈해도 유지)
+    state.blocks[b.time ? slotId(b.date, b.time) : b.date] = b.kind || 'closed';
   });
 }
 
 async function loadMine() {
   const snap = await db.collection(CONFIG.col.reservations).doc(state.user.code).get();
-  state.mine = snap.exists ? snap.data() : null;
+  const v = snap.exists ? snap.data() : null;
+  state.mine = (v && v.status !== 'cancelled') ? v : null;
   renderTicket();
 }
 
@@ -587,8 +586,8 @@ async function loadMine() {
 const takenAt = (dateKey, time) => state.taken[slotId(dateKey, time)] || 0;
 function blockedKey(key){
   if (!(key in state.blocks)) return false;
-  // 오픈 시각에 자동 해제 설정이 켜져 있으면, 오픈 전에 걸어둔 차단은 오픈과 동시에 풀린다
-  if (state.releaseOnOpen && isOpen() && state.blocks[key] < (state.openAt || 0)) return false;
+  // 오픈 대기용 잠금만 오픈과 동시에 풀린다. 휴관으로 막아둔 것은 그대로 남는다.
+  if (state.blocks[key] === 'hold' && isOpen()) return false;
   return true;
 }
 const isShut  = (dateKey, time) => blockedKey(dateKey) || (time && blockedKey(slotId(dateKey, time)));
@@ -877,8 +876,10 @@ async function reserve(dateKey, time) {
   await db.runTransaction(async t => {
     const resSnap  = await t.get(resRef);
     const slotSnap = await t.get(slotRef);
+    const prevStatus = resSnap.exists ? resSnap.data().status : null;
+    const prevLive = resSnap.exists && prevStatus !== 'cancelled';
     let prevRef = null, prevTaken = 0;
-    if (resSnap.exists) {
+    if (prevLive) {
       const prevId = slotId(resSnap.data().date, resSnap.data().time);
       if (prevId !== slotId(dateKey, time)) {
         prevRef = db.collection(CONFIG.col.slots).doc(prevId);
@@ -896,7 +897,7 @@ async function reserve(dateKey, time) {
       nickname: state.user.nick,
       date: dateKey,
       time,
-      status: resSnap.exists ? (resSnap.data().status || 'pending') : 'pending',
+      status: (prevLive && prevStatus) ? prevStatus : 'pending',
       createdAt: resSnap.exists ? resSnap.data().createdAt : firebase.firestore.FieldValue.serverTimestamp(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -908,12 +909,12 @@ async function cancel() {
   const resRef  = db.collection(CONFIG.col.reservations).doc(state.user.code);
   await db.runTransaction(async t => {
     const resSnap = await t.get(resRef);
-    if (!resSnap.exists) return;
+    if (!resSnap.exists || resSnap.data().status === 'cancelled') return;
     const slotRef = db.collection(CONFIG.col.slots).doc(slotId(resSnap.data().date, resSnap.data().time));
     const slotSnap = await t.get(slotRef);
     const taken = slotSnap.exists ? (slotSnap.data().taken || 0) : 0;
     t.set(slotRef, { taken: Math.max(0, taken - 1) }, { merge: true });
-    t.delete(resRef);
+    t.set(resRef, { status: 'cancelled', updatedAt: firebase.firestore.FieldValue.serverTimestamp() }, { merge: true });
   });
   state.mine = null;
   await refresh();
