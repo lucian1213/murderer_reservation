@@ -8,6 +8,7 @@
 
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -197,6 +198,10 @@ tr:hover td{background:rgba(255,255,255,.02);}
   <h2>예약 관리</h2>
   <p class="sub">I'M (NOT) A MURDERER · 관리자 전용</p>
   <div class="field">
+    <label class="lab" for="email">이메일</label>
+    <input type="text" id="email" autocomplete="username" spellcheck="false">
+  </div>
+  <div class="field">
     <label class="lab" for="pw">비밀번호</label>
     <input type="password" id="pw" autocomplete="current-password">
   </div>
@@ -296,11 +301,11 @@ tr:hover td{background:rgba(255,255,255,.02);}
         <p class="msg" id="openMsg"></p>
       </div>
       <div class="box">
-        <h3>비밀번호 바꾸기</h3>
-        <p class="sub">새 비밀번호를 넣고 나온 값을 파일 위쪽 <b>CONFIG.adminHash</b>에 붙여넣으면 바뀝니다.</p>
-        <div class="field"><input type="text" id="newPw" placeholder="새 비밀번호"></div>
-        <button class="btn ghost" id="hashBtn">해시 만들기</button>
-        <div class="field" style="margin-top:14px;"><input type="text" id="hashOut" readonly placeholder="여기에 값이 나옵니다"></div>
+        <h3>관리자 계정</h3>
+        <p class="sub">지금 로그인한 계정입니다. 비밀번호를 바꾸려면 재설정 메일을 받아 링크에서 바꾸세요.</p>
+        <p style="font-family:var(--tag);font-size:17px;letter-spacing:.06em;color:var(--lamp);margin:0 0 16px" id="acctEmail">—</p>
+        <button class="btn ghost" id="resetBtn">비밀번호 재설정 메일 보내기</button>
+        <p class="msg" id="resetMsg"></p>
       </div>
       <div class="box">
         <h3>자리 수 다시 세기</h3>
@@ -346,51 +351,19 @@ const CONFIG = {
   times:       ['10:00', '14:00', '18:00'],
   capacity:    1,
   col: { supporters:'aim_supporters', reservations:'aim_reservations', slots:'aim_slots', blocks:'aim_blocks',
-         config:'aim_config', meta:'aim_meta' },
+         config:'aim_config' },
   configDoc: 'booking',
 
-  // 초기 비밀번호: mystery-aim-2026  (도구 탭에서 새 해시를 만들어 바꾸세요)
-  adminHash: '8a34fa0fbc3448141838696f00b0f6c3654d363e74cd92078de2b1b21e182860'
+  // 관리자 로그인은 파이어베이스 계정(이메일 + 비밀번호)을 씁니다.
+  // 계정은 Firebase 콘솔 → Authentication → Users 에서 만드세요.
 };
 
-/* ── SHA-256 (외부 의존 없음) ── */
-function sha256(ascii){
-  function r(v,a){return (v>>>a)|(v<<(32-a));}
-  const K=[];const H=[];let p=2,i=0;
-  function isP(n){for(let f=2;f*f<=n;f++)if(n%f===0)return false;return true;}
-  for(p=2;i<64;p++){if(!isP(p))continue;if(i<8)H[i]=(Math.pow(p,.5)%1*4294967296)|0;K[i]=(Math.pow(p,1/3)%1*4294967296)|0;i++;}
-  const bytes=[];for(let c=0;c<ascii.length;c++){let cp=ascii.charCodeAt(c);
-    if(cp<128)bytes.push(cp);
-    else if(cp<2048){bytes.push(192|(cp>>6),128|(cp&63));}
-    else if(cp<55296||cp>=57344){bytes.push(224|(cp>>12),128|((cp>>6)&63),128|(cp&63));}
-    else{const cp2=((cp-55296)<<10)+(ascii.charCodeAt(++c)-56320)+65536;
-      bytes.push(240|(cp2>>18),128|((cp2>>12)&63),128|((cp2>>6)&63),128|(cp2&63));}}
-  const bitLen=bytes.length*8; bytes.push(0x80);
-  while(bytes.length%64!==56)bytes.push(0);
-  const hi=Math.floor(bitLen/4294967296), lo=bitLen>>>0;
-  bytes.push((hi>>>24)&255,(hi>>>16)&255,(hi>>>8)&255,hi&255,(lo>>>24)&255,(lo>>>16)&255,(lo>>>8)&255,lo&255);
-  const w=new Array(64); const h=H.slice();
-  for(let j=0;j<bytes.length;j+=64){
-    for(let t=0;t<16;t++)w[t]=(bytes[j+t*4]<<24)|(bytes[j+t*4+1]<<16)|(bytes[j+t*4+2]<<8)|bytes[j+t*4+3];
-    for(let t=16;t<64;t++){
-      const s0=r(w[t-15],7)^r(w[t-15],18)^(w[t-15]>>>3);
-      const s1=r(w[t-2],17)^r(w[t-2],19)^(w[t-2]>>>10);
-      w[t]=(w[t-16]+s0+w[t-7]+s1)|0;}
-    let [a,b,c,d,e,f,g,hh]=h;
-    for(let t=0;t<64;t++){
-      const S1=r(e,6)^r(e,11)^r(e,25), ch=(e&f)^(~e&g), t1=(hh+S1+ch+K[t]+w[t])|0;
-      const S0=r(a,2)^r(a,13)^r(a,22), mj=(a&b)^(a&c)^(b&c), t2=(S0+mj)|0;
-      hh=g;g=f;f=e;e=(d+t1)|0;d=c;c=b;b=a;a=(t1+t2)|0;}
-    h[0]=(h[0]+a)|0;h[1]=(h[1]+b)|0;h[2]=(h[2]+c)|0;h[3]=(h[3]+d)|0;
-    h[4]=(h[4]+e)|0;h[5]=(h[5]+f)|0;h[6]=(h[6]+g)|0;h[7]=(h[7]+hh)|0;}
-  return h.map(x=>((x>>>0).toString(16).padStart(8,'0'))).join('');
-}
-
 /* ══════════════════════════════════════════════ */
-let db = null, netOk = true;
+let db = null, auth = null, netOk = true;
 try {
   firebase.initializeApp(CONFIG.firebase);
   db = firebase.firestore();
+  auth = firebase.auth();
 } catch (e) {
   netOk = false;
   console.error('Firebase 초기화 실패:', e);
@@ -425,12 +398,11 @@ function buildDates(){
 
 async function syncClock(){
   try{
-    const ref=db.collection(CONFIG.col.meta).doc('clock');
-    await ref.set({ t:firebase.firestore.FieldValue.serverTimestamp() },{merge:true});
-    const snap=await ref.get();
-    const t=snap.exists&&snap.data().t;
-    if(t&&t.toDate) state.offset=t.toDate().getTime()-Date.now();
-  }catch(e){ state.offset=0; }
+    const res=await fetch(location.href,{method:'HEAD',cache:'no-store'});
+    const d=res.headers.get('date');
+    if(d){ state.offset=new Date(d).getTime()-Date.now(); return; }
+  }catch(e){}
+  state.offset=0;
 }
 const now=()=>Date.now()+state.offset;
 const isOpen=()=>!state.openAt||now()>=state.openAt;
@@ -941,11 +913,14 @@ $('#openNow').onclick=()=>{
 };
 
 /* ══════════ 도구 ══════════ */
-$('#hashBtn').onclick=()=>{
-  const v=$('#newPw').value;
-  if(!v) return;
-  $('#hashOut').value=sha256(v);
-  $('#hashOut').select();
+$('#resetBtn').onclick=async()=>{
+  const msg=$('#resetMsg'); msg.className='msg';
+  const u=auth&&auth.currentUser;
+  if(!u){ msg.classList.add('err'); msg.textContent='로그인 정보를 찾지 못했습니다.'; return; }
+  msg.innerHTML='<span class="spin"></span>보내는 중';
+  try{ await auth.sendPasswordResetEmail(u.email);
+       msg.className='msg ok'; msg.textContent=`${u.email} 로 재설정 메일을 보냈습니다.`; }
+  catch(e){ console.error(e); msg.className='msg err'; msg.textContent='메일을 보내지 못했습니다.'; }
 };
 
 $('#recalcBtn').onclick=async()=>{
@@ -992,24 +967,43 @@ $('#q').oninput=e=>{ state.q=e.target.value; renderList(); };
 /* ══════════ 로그인 ══════════ */
 async function unlock(){
   const msg=$('#pwMsg'); msg.className='msg';
-  const v=$('#pw').value;
-  if(sha256(v)!==CONFIG.adminHash){ msg.classList.add('err'); msg.textContent='비밀번호가 맞지 않습니다.'; return; }
-  store.setItem('aimAdmin', CONFIG.adminHash);
+  const email=$('#email').value.trim(), pw=$('#pw').value;
+  if(!email||!pw){ msg.classList.add('err'); msg.textContent='이메일과 비밀번호를 모두 입력해 주세요.'; return; }
+  $('#pwBtn').disabled=true;
+  msg.innerHTML='<span class="spin"></span>확인하는 중';
+  try{
+    await auth.signInWithEmailAndPassword(email, pw);   // 성공하면 아래 감시자가 화면을 연다
+  }catch(e){
+    console.error(e);
+    msg.className='msg err';
+    msg.textContent =
+      ['auth/invalid-credential','auth/wrong-password','auth/user-not-found','auth/invalid-email'].includes(e.code)
+        ? '이메일 또는 비밀번호가 맞지 않습니다.'
+      : e.code==='auth/too-many-requests' ? '시도가 너무 잦습니다. 잠시 후 다시 해주세요.'
+      : e.code==='auth/network-request-failed' ? '연결에 실패했습니다. 인터넷을 확인해 주세요.'
+      : '로그인하지 못했습니다.';
+  }finally{ $('#pwBtn').disabled=false; }
+}
+
+async function openApp(user){
   $('#gate').hidden=true; $('#app').hidden=false;
-  msg.innerHTML='';
+  $('#pwMsg').textContent=''; $('#pw').value='';
+  $('#acctEmail').textContent=user.email||'';
   buildDates();
   await syncClock();
   try{ await loadAll(); }catch(e){ console.error(e); toast('데이터를 불러오지 못했습니다'); }
 }
+
 $('#pwBtn').onclick=unlock;
-$('#pw').addEventListener('keydown',e=>{ if(e.key==='Enter') unlock(); });
-$('#lockBtn').onclick=()=>{ store.removeItem('aimAdmin'); location.reload(); };
+[$('#email'),$('#pw')].forEach(el=>el.addEventListener('keydown',e=>{ if(e.key==='Enter') unlock(); }));
+$('#lockBtn').onclick=async()=>{ try{ await auth.signOut(); }catch(e){} location.reload(); };
 $('#reloadBtn').onclick=()=>run(()=>Promise.resolve(),'새로고침했습니다');
 
-if(store.getItem('aimAdmin')===CONFIG.adminHash){
-  $('#gate').hidden=true; $('#app').hidden=false;
-  buildDates(); syncClock().then(loadAll).catch(e=>{ console.error(e); toast('데이터를 불러오지 못했습니다'); });
-}
+/* 로그인 상태가 유지되므로 새로고침해도 다시 열린다 */
+if(auth) auth.onAuthStateChanged(u=>{
+  if(u) openApp(u);
+  else { $('#app').hidden=true; $('#gate').hidden=false; }
+});
 
 /* 연결 실패를 화면에 알림 (조용히 빈 화면이 되지 않도록) */
 if (!netOk) {
