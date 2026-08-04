@@ -347,6 +347,10 @@ const CONFIG = {
   seasonStart: '2026-08-14',
   seasonEnd:   '2026-11-15',
   openDays:    [5, 6, 0],
+  extraDates:  ['2026-08-17', '2026-09-24', '2026-10-05'],   // 공휴일 추가 공연일
+  closed: [                  // 파일에 고정된 휴관 (예약 페이지와 같은 값이어야 함)
+    '2026-09-05', '2026-09-19', '2026-09-04_10:00', '2026-10-17_14:00'
+  ],
   times:       ['10:00', '14:00', '18:00'],
   capacity:    1,
   col: { supporters:'aim_supporters', reservations:'aim_reservations', slots:'aim_slots', blocks:'aim_blocks',
@@ -386,11 +390,11 @@ const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 const todayKey = () => keyOf(new Date());
 
 function buildDates(){
-  const out=[]; const end=parseKey(CONFIG.seasonEnd);
+  const keys=new Set(CONFIG.extraDates||[]); const end=parseKey(CONFIG.seasonEnd);
   for(let d=parseKey(CONFIG.seasonStart); d<=end; d.setDate(d.getDate()+1))
-    if(CONFIG.openDays.includes(d.getDay())) out.push(keyOf(d));
-  state.dates=out;
-  state.monthKeys=[...new Set(out.map(k=>k.slice(0,7)))];
+    if(CONFIG.openDays.includes(d.getDay())) keys.add(keyOf(d));
+  state.dates=[...keys].sort();
+  state.monthKeys=[...new Set(state.dates.map(k=>k.slice(0,7)))];
   const now=todayKey().slice(0,7);
   state.month = state.monthKeys.includes(now) ? now : state.monthKeys[0];
 }
@@ -407,6 +411,7 @@ const now=()=>Date.now()+state.offset;
 const isOpen=()=>!state.openAt||now()>=state.openAt;
 /* 오픈 때 자동으로 풀리는 대기 잠금인지 */
 const isHold=k=>state.blockKind[k]==='hold';
+const isFixed=k=>state.blocks[k]==='__fixed__';   // 파일에 박아둔 휴관 (화면에서 못 푼다)
 
 function toast(t){ const el=$('#toast'); el.textContent=t; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),2200); }
 
@@ -426,6 +431,7 @@ async function loadAll(){
   });
   state.taken={}; s.forEach(d=>{ state.taken[d.id]=d.data().taken||0; });
   state.blocks={}; state.blockKind={};
+  (CONFIG.closed||[]).forEach(k=>{ state.blocks[k]='__fixed__'; state.blockKind[k]='closed'; });
   b.forEach(d=>{ const v=d.data(); const k=v.time?slotId(v.date,v.time):v.date;
     state.blocks[k]=d.id;
     state.blockKind[k]=v.kind||'closed';   // hold = 오픈 대기 잠금, closed = 휴관
@@ -490,9 +496,11 @@ function renderDays(){
         ${d===tk?'<span class="today">TODAY</span>':(d<tk?'<span class="past">지난 날짜</span>':'')}
         <span class="cnt">${cnt} / ${CONFIG.times.length}</span>
         <div class="acts">
-          ${blocked
-            ? `<button class="mini go" data-act="dayopen" data-d="${d}">이 날 차단 풀기</button>`
-            : `<button class="mini warn" data-act="dayblock" data-d="${d}">이 날 전체 막기</button>`}
+          ${isFixed(d)
+            ? `<span class="past">설정 고정 휴관</span>`
+            : blocked
+              ? `<button class="mini go" data-act="dayopen" data-d="${d}">이 날 차단 풀기</button>`
+              : `<button class="mini warn" data-act="dayblock" data-d="${d}">이 날 전체 막기</button>`}
         </div>
       </div>
       <div class="cells">${CONFIG.times.map((t,i)=>cellHtml(d,t,i)).join('')}</div>`;
@@ -527,9 +535,12 @@ function cellHtml(d,t,i){
       <span class="tent">${i+1}</span>
       <div class="body">
         <div class="time">${t}</div>
-        <div class="note">${isHold(whole?d:slotId(d,t))?'오픈 대기 잠금 · 오픈 때 자동 해제':(whole?'이 날 휴관':'휴관')}</div>
+        <div class="note">${
+          isHold(whole?d:slotId(d,t)) ? '오픈 대기 잠금 · 오픈 때 자동 해제'
+          : isFixed(whole?d:slotId(d,t)) ? (whole?'이 날 휴관 · 설정 고정':'휴관 · 설정 고정')
+          : (whole?'이 날 휴관':'휴관')}</div>
         <div class="acts">
-          ${whole?'':`<button class="mini go" data-act="unblock" data-d="${d}" data-t="${t}">풀기</button>`}
+          ${(whole||isFixed(slotId(d,t)))?'':`<button class="mini go" data-act="unblock" data-d="${d}" data-t="${t}">풀기</button>`}
         </div>
       </div></div>`;
   }
@@ -804,7 +815,8 @@ async function blockEmpty(dates){
 
 function askOpenAll(scope){
   const dates=new Set(scopeDates(scope));
-  const ids=Object.entries(state.blocks).filter(([k])=>dates.has(k.slice(0,10))).map(([,id])=>id);
+  const ids=Object.entries(state.blocks)
+    .filter(([k,id])=>dates.has(k.slice(0,10)) && id!=='__fixed__').map(([,id])=>id);
   openV(scope==='month'?'이 달 차단을 전부 풀까요?':'시즌 전체 차단을 전부 풀까요?',
     ids.length?`막아둔 ${ids.length}건이 모두 풀려 예약을 받게 됩니다.`:'풀 차단이 없습니다.',
     '전부 풀기',
@@ -911,7 +923,7 @@ $('#openNow').onclick=()=>{
     + (closed?`\n휴관으로 막아둔 ${closed}건은 그대로 유지됩니다.`:''),
     '열기',
     async()=>{
-      if(holds.length) await deleteIds(holds.map(k=>state.blocks[k]));
+      if(holds.length) await deleteIds(holds.map(k=>state.blocks[k]).filter(id=>id!=='__fixed__'));
       await saveOpen(null);
       return '열었습니다';
     });
