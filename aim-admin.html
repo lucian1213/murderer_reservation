@@ -434,11 +434,12 @@ async function loadAll(){
     if(v.status!=='cancelled') state.res[d.id]={ id:d.id, ...v };   // 취소된 예약은 빈 회차로 본다
   });
   state.taken={}; s.forEach(d=>{ state.taken[d.id]=d.data().taken||0; });
-  state.blocks={}; state.blockKind={};
+  state.blocks={}; state.blockKind={}; state.blockAt={};
   (CONFIG.closed||[]).forEach(k=>{ state.blocks[k]='__fixed__'; state.blockKind[k]='closed'; });
   b.forEach(d=>{ const v=d.data(); const k=v.time?slotId(v.date,v.time):v.date;
     state.blocks[k]=d.id;
     state.blockKind[k]=v.kind||'closed';   // hold = 오픈 대기 잠금, closed = 휴관
+    state.blockAt[k]=(v.createdAt&&v.createdAt.toDate)?v.createdAt.toDate().getTime():0;
   });
   state.people=[]; p.forEach(d=>state.people.push({ id:d.id, ...d.data() }));
   state.people.sort((a,b2)=>String(a.code).localeCompare(String(b2.code)));
@@ -446,7 +447,8 @@ async function loadAll(){
 }
 
 const resAt = (d,t) => Object.values(state.res).find(x=>x.date===d&&x.time===t) || null;
-const liveBlock = k => (k in state.blocks) && !(isHold(k) && state.openAt && isOpen());
+const liveBlock = k => (k in state.blocks)
+  && !(isHold(k) && state.openAt && isOpen() && (state.blockAt[k]||0) < state.openAt);
 const isBlocked = (d,t) => liveBlock(d) || liveBlock(slotId(d,t));
 const dayBlocked = d => liveBlock(d);
 
@@ -462,11 +464,14 @@ function renderStats(){
     if(isBlocked(d,t)){ blocked++; if(isHold(d)||isHold(slotId(d,t))) holds++; }
     else if(!resAt(d,t)) open++;
   }));
-  const holdCount = Object.keys(state.blocks).filter(isHold).length;
+  const liveHolds = Object.keys(state.blocks).filter(k => isHold(k) && liveBlock(k)).length;
   const warn = $('#holdWarn');
-  if (holdCount && !state.openAt) {
+  if (liveHolds && !state.openAt) {
     warn.hidden = false;
-    warn.innerHTML = `오픈 시각이 정해져 있지 않습니다. 지금은 <b>오픈 대기 잠금 ${holdCount}건이 그대로 걸려 있어</b> 후원자 화면에 예약 불가로 보입니다.<br>도구 탭에서 오픈 시각을 정하면 그 시각에 자동으로 풀립니다. 바로 열려면 <b>지금 바로 열기</b>를 누르세요.`;
+    warn.innerHTML = `오픈 시각이 정해져 있지 않습니다. 지금은 <b>오픈 대기 잠금 ${liveHolds}건이 그대로 걸려 있어</b> 후원자 화면에 예약 불가로 보입니다.<br>도구 탭에서 오픈 시각을 정하면 그 시각에 자동으로 풀립니다. 바로 열려면 <b>지금 바로 열기</b>를 누르세요.`;
+  } else if (liveHolds && state.openAt && state.openAt <= now()) {
+    warn.hidden = false;
+    warn.innerHTML = `저장된 오픈 시각(${fmtWhen(state.openAt)})이 이미 지났습니다. 그 뒤에 건 <b>오픈 대기 잠금 ${liveHolds}건은 계속 잠겨 있습니다</b>.<br>도구 탭에서 <b>새 오픈 시각을 저장</b>하면 그 시각에 자동으로 풀립니다.`;
   } else warn.hidden = true;
 
   $('#stats').innerHTML = `
