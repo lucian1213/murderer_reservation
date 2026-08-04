@@ -684,12 +684,14 @@ async function loadAvailability() {
   ]);
   state.taken = {};
   slotSnap.forEach(doc => { state.taken[doc.id] = doc.data().taken || 0; });
-  state.blocks = {};
+  state.blocks = {}; state.blockAt = {};
   (CONFIG.closed || []).forEach(k => { state.blocks[k] = 'closed'; });   // 파일에 고정된 휴관
   blockSnap.forEach(doc => {
     const b = doc.data();
     // kind: 'hold' = 오픈 대기용 잠금(오픈 때 자동 해제), 그 외 = 휴관(오픈해도 유지)
-    state.blocks[b.time ? slotId(b.date, b.time) : b.date] = b.kind || 'closed';
+    const k = b.time ? slotId(b.date, b.time) : b.date;
+    state.blocks[k] = b.kind || 'closed';
+    state.blockAt[k] = (b.createdAt && b.createdAt.toDate) ? b.createdAt.toDate().getTime() : 0;
   });
 }
 
@@ -704,12 +706,23 @@ async function loadMine() {
 const takenAt = (dateKey, time) => state.taken[slotId(dateKey, time)] || 0;
 function blockedKey(key){
   if (!(key in state.blocks)) return false;
-  // 오픈 대기용 잠금은 '정해둔 오픈 시각'이 지나야 풀린다.
-  // 오픈 시각이 아예 없으면 풀 기준이 없으므로 계속 잠긴 상태로 둔다.
-  if (state.blocks[key] === 'hold' && state.openAt && isOpen()) return false;
+  // 오픈 대기용 잠금은 '그 잠금보다 나중에 오는 오픈 시각'이 지나야 풀린다.
+  // 오픈 시각이 없거나, 오픈 시각이 잠금을 건 시점보다 앞이면(=이미 지난 오픈) 계속 잠긴다.
+  if (state.blocks[key] === 'hold' && state.openAt && isOpen()
+      && (state.blockAt[key] || 0) < state.openAt) return false;
   return true;
 }
 const isShut  = (dateKey, time) => blockedKey(dateKey) || (time && blockedKey(slotId(dateKey, time)));
+
+/* '' = 열림 · 'hold' = 오픈 대기 잠금 · 'closed' = 휴관 */
+function shutKind(dateKey, time) {
+  let kind = '';
+  [dateKey, slotId(dateKey, time)].forEach(k => {
+    if (!blockedKey(k)) return;
+    kind = (state.blocks[k] === 'hold') ? (kind || 'hold') : 'closed';
+  });
+  return kind;
+}
 function seatsLeftOn(dateKey) {
   if (blockedKey(dateKey)) return -1;
   return CONFIG.times.reduce((sum, t) =>
@@ -844,9 +857,11 @@ function renderDays() {
   state.dates.filter(x => `${x.y}-${pad(x.m)}` === state.month).forEach(info => {
     const left = seatsLeftOn(info.key);
     const mine = state.mine && state.mine.date === info.key;
-    const allShut = CONFIG.times.every(t => isShut(info.key, t));
+    const allShut   = CONFIG.times.every(t => isShut(info.key, t));
+    const allClosed = CONFIG.times.every(t => shutKind(info.key, t) === 'closed');
     let note, cls = 'day';
     if (left < 0)        { note = '휴관'; cls += ' shut'; }
+    else if (allClosed)  { note = '예약 불가'; cls += ' shut'; }
     else if (!isOpen())  { note = '오픈 예정'; cls += ' waiting'; }
     else if (allShut)    { note = '예약 불가'; cls += ' shut'; }
     else if (left === 0) { note = '전 회차 마감'; cls += ' full'; }
@@ -857,7 +872,7 @@ function renderDays() {
 
     const cell = document.createElement('button');
     cell.className = cls;
-    cell.disabled = left < 0 || allShut || (!isOpen() && !mine);
+    cell.disabled = left < 0 || allClosed || allShut || (!isOpen() && !mine);
     cell.innerHTML =
       `<span class="mon">${'일월화수목금토'[info.dow]}${info.holiday ? ' · 공휴일' : ''}</span>` +
       `<span class="num">${info.d}</span>` +
@@ -882,14 +897,15 @@ function renderSlots() {
 
   CONFIG.times.forEach((time, i) => {
     const left = CONFIG.capacity - takenAt(state.date, time);
-    const shut = isShut(state.date, time);
+    const kind = shutKind(state.date, time);
     const mine = state.mine && state.mine.date === state.date && state.mine.time === time;
     const b = document.createElement('button');
     b.className = 'slot' + (mine ? ' mine' : '');
-    b.disabled = shut || !isOpen() || (left <= 0 && !mine);
+    b.disabled = !!kind || !isOpen() || (left <= 0 && !mine);
     const note = mine ? '나의 예약'
-               : shut ? '예약 불가'
+               : kind === 'closed' ? '예약 불가'
                : !isOpen() ? '오픈 예정'
+               : kind ? '예약 불가'
                : left <= 0 ? '예약 마감'
                : CONFIG.capacity === 1 ? '예약 가능' : `${CONFIG.capacity}석 중 ${left}석 남음`;
     b.innerHTML = `<span class="tent">${i+1}</span><span><span class="t">${time}</span><span class="s">${note}</span></span>`;
