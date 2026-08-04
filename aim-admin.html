@@ -73,6 +73,9 @@ input:focus,select:focus,textarea:focus{outline:none; border-color:var(--ember);
 input[type=datetime-local]{color-scheme:dark;}
 .check{display:flex; gap:9px; align-items:flex-start; font-size:13px; color:var(--dust); cursor:pointer; margin:14px 0 4px;}
 .check input{width:16px; height:16px; accent-color:var(--ember); margin-top:2px; flex:0 0 auto;}
+.warnbar{border:1px solid #4d2a22; background:rgba(157,48,32,.14); color:#eaa895;
+  padding:13px 16px; margin-bottom:18px; font-size:13px; line-height:1.6;}
+.warnbar b{color:#ffd9cc;}
 .openstate{border:1px solid var(--line); background:rgba(0,0,0,.3); padding:14px 16px; margin-bottom:18px; font-size:13.5px;}
 .openstate b{color:var(--lamp);}
 .openstate .big{font-family:var(--tag); font-size:22px; letter-spacing:.06em; color:var(--lamp); display:block; margin-top:4px;}
@@ -233,6 +236,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 
   <!-- 예약 현황 -->
   <section id="view-board">
+    <div class="warnbar" id="holdWarn" hidden></div>
     <div class="bar">
       <div class="months" id="months"></div>
       <div class="sep"></div>
@@ -442,7 +446,7 @@ async function loadAll(){
 }
 
 const resAt = (d,t) => Object.values(state.res).find(x=>x.date===d&&x.time===t) || null;
-const liveBlock = k => (k in state.blocks) && !(isHold(k) && isOpen());
+const liveBlock = k => (k in state.blocks) && !(isHold(k) && state.openAt && isOpen());
 const isBlocked = (d,t) => liveBlock(d) || liveBlock(slotId(d,t));
 const dayBlocked = d => liveBlock(d);
 
@@ -458,6 +462,13 @@ function renderStats(){
     if(isBlocked(d,t)){ blocked++; if(isHold(d)||isHold(slotId(d,t))) holds++; }
     else if(!resAt(d,t)) open++;
   }));
+  const holdCount = Object.keys(state.blocks).filter(isHold).length;
+  const warn = $('#holdWarn');
+  if (holdCount && !state.openAt) {
+    warn.hidden = false;
+    warn.innerHTML = `오픈 시각이 정해져 있지 않습니다. 지금은 <b>오픈 대기 잠금 ${holdCount}건이 그대로 걸려 있어</b> 후원자 화면에 예약 불가로 보입니다.<br>도구 탭에서 오픈 시각을 정하면 그 시각에 자동으로 풀립니다. 바로 열려면 <b>지금 바로 열기</b>를 누르세요.`;
+  } else warn.hidden = true;
+
   $('#stats').innerHTML = `
     <div class="stat"><dt>공연일</dt><dd>${state.dates.length}<small>일</small></dd></div>
     <div class="stat"><dt>전체 회차</dt><dd>${total}<small>회</small></dd></div>
@@ -512,7 +523,7 @@ function renderDays(){
 
 function cellHtml(d,t,i){
   const r=resAt(d,t);
-  const slotBlocked = slotId(d,t) in state.blocks;
+  const slotBlocked = liveBlock(slotId(d,t));
   const whole = dayBlocked(d);
   if(r){
     const ok = r.status==='confirmed';
