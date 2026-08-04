@@ -704,8 +704,9 @@ async function loadMine() {
 const takenAt = (dateKey, time) => state.taken[slotId(dateKey, time)] || 0;
 function blockedKey(key){
   if (!(key in state.blocks)) return false;
-  // 오픈 대기용 잠금만 오픈과 동시에 풀린다. 휴관으로 막아둔 것은 그대로 남는다.
-  if (state.blocks[key] === 'hold' && isOpen()) return false;
+  // 오픈 대기용 잠금은 '정해둔 오픈 시각'이 지나야 풀린다.
+  // 오픈 시각이 아예 없으면 풀 기준이 없으므로 계속 잠긴 상태로 둔다.
+  if (state.blocks[key] === 'hold' && state.openAt && isOpen()) return false;
   return true;
 }
 const isShut  = (dateKey, time) => blockedKey(dateKey) || (time && blockedKey(slotId(dateKey, time)));
@@ -843,9 +844,11 @@ function renderDays() {
   state.dates.filter(x => `${x.y}-${pad(x.m)}` === state.month).forEach(info => {
     const left = seatsLeftOn(info.key);
     const mine = state.mine && state.mine.date === info.key;
+    const allShut = CONFIG.times.every(t => isShut(info.key, t));
     let note, cls = 'day';
     if (left < 0)        { note = '휴관'; cls += ' shut'; }
     else if (!isOpen())  { note = '오픈 예정'; cls += ' waiting'; }
+    else if (allShut)    { note = '예약 불가'; cls += ' shut'; }
     else if (left === 0) { note = '전 회차 마감'; cls += ' full'; }
     else                 { note = leftWord(left); }
     if (mine) note = '나의 예약';
@@ -854,7 +857,7 @@ function renderDays() {
 
     const cell = document.createElement('button');
     cell.className = cls;
-    cell.disabled = left < 0 || (!isOpen() && !mine);
+    cell.disabled = left < 0 || allShut || (!isOpen() && !mine);
     cell.innerHTML =
       `<span class="mon">${'일월화수목금토'[info.dow]}${info.holiday ? ' · 공휴일' : ''}</span>` +
       `<span class="num">${info.d}</span>` +
