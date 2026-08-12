@@ -116,10 +116,6 @@ label.lab{display:block; font-family:var(--tag); font-size:12px; letter-spacing:
   <h2>예약 현황</h2>
   <p class="sub">I'M (NOT) A MURDERER · 조회 전용</p>
   <div class="field">
-    <label class="lab" for="email">이메일</label>
-    <input type="text" id="email" autocomplete="username" spellcheck="false">
-  </div>
-  <div class="field">
     <label class="lab" for="pw">비밀번호</label>
     <input type="password" id="pw" autocomplete="current-password">
   </div>
@@ -163,7 +159,11 @@ const CONFIG = {
   extraDates:  ['2026-08-17', '2026-09-24', '2026-10-05'],
   closed: ['2026-09-05', '2026-09-19', '2026-09-04_10:00', '2026-10-17_14:00'],
   times: ['10:00', '14:00', '18:00'],
-  col: { reservations:'aim_reservations', blocks:'aim_blocks' }
+  col: { reservations:'aim_reservations', blocks:'aim_blocks' },
+
+  // 조회 전용 계정의 이메일 — Firebase 콘솔 → Authentication 에서 만든 계정 주소를 넣으세요.
+  // 화면에는 보이지 않고, 접속하는 사람은 비밀번호만 입력합니다.
+  viewerEmail: 'lgmjjang@naver.com'
 };
 
 let db = null, auth = null, netOk = true;
@@ -272,22 +272,22 @@ function render(){
 /* ══════ 로그인 ══════ */
 async function unlock(){
   const msg=$('#pwMsg'); msg.className='msg';
-  const email=$('#email').value.trim(), pw=$('#pw').value;
-  if(!email||!pw){ msg.classList.add('err'); msg.textContent='이메일과 비밀번호를 모두 입력해 주세요.'; return; }
+  const pw=$('#pw').value;
+  if(!pw){ msg.classList.add('err'); msg.textContent='비밀번호를 입력해 주세요.'; return; }
   $('#pwBtn').disabled=true;
   msg.innerHTML='<span class="spin"></span>확인하는 중';
-  try{ await auth.signInWithEmailAndPassword(email,pw); }
+  try{ await auth.signInWithEmailAndPassword(CONFIG.viewerEmail, pw); }
   catch(e){
     console.error(e);
     msg.className='msg err';
     msg.textContent=['auth/invalid-credential','auth/wrong-password','auth/user-not-found','auth/invalid-email'].includes(e.code)
-      ? '이메일 또는 비밀번호가 맞지 않습니다.'
+      ? '비밀번호가 맞지 않습니다.'
       : e.code==='auth/too-many-requests' ? '시도가 너무 잦습니다. 잠시 후 다시 해주세요.'
       : '로그인하지 못했습니다.';
   }finally{ $('#pwBtn').disabled=false; }
 }
 $('#pwBtn').onclick=unlock;
-[$('#email'),$('#pw')].forEach(el=>el.addEventListener('keydown',e=>{ if(e.key==='Enter') unlock(); }));
+$('#pw').addEventListener('keydown',e=>{ if(e.key==='Enter') unlock(); });
 $('#outBtn').onclick=async()=>{ try{ await auth.signOut(); }catch(e){} location.reload(); };
 $('#reloadBtn').onclick=async()=>{ try{ await loadAll(); }catch(e){ console.error(e); } };
 
