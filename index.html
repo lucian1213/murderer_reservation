@@ -334,6 +334,12 @@ section.block{margin-bottom:46px;}
 .notes li{position:relative; padding-left:20px; font-size:13.5px; color:var(--dust); line-height:1.6;}
 .notes li::before{content:''; position:absolute; left:0; top:9px; width:6px; height:6px; background:var(--ember); opacity:.7;}
 .notes li b{color:var(--bone); font-weight:600;}
+.notes li.hot{
+  border:1px solid rgba(227,178,60,.35); background:rgba(227,178,60,.07);
+  padding:13px 16px 13px 38px; color:var(--bone); font-size:14px; line-height:1.7;
+}
+.notes li.hot::before{left:16px; top:16px; width:7px; height:7px; background:var(--marker); opacity:1;}
+.notes li.hot b{color:var(--marker);}
 .notes ul.sub{margin:10px 0 10px; padding:0; display:grid; gap:6px;}
 .notes ul.sub li{padding-left:14px; font-size:13px; color:var(--dust-dim);}
 .notes ul.sub li::before{content:''; position:absolute; left:0; top:10px; width:7px; height:1px; background:var(--dust-dim);}
@@ -472,7 +478,8 @@ footer .brand{font-family:var(--tag); letter-spacing:.3em;}
     <section class="notes">
       <ul>
         <li>한 회차는 <b>한 분만</b> 예약할 수 있고, 한 분당 <b>한 회차</b>만 잡을 수 있습니다. 다른 회차를 고르면 기존 예약이 그 회차로 옮겨집니다.</li>
-        <li>예약 변경은 <b>8월 31일 24:00</b>까지 가능합니다. 9월 1일부터의 예약 변경은 텀블벅을 통해 문의 부탁드립니다.</li>
+        <li class="hot">예약 변경은 <b>8월 31일 24:00까지</b> 가능합니다.<br>9월 1일부터의 예약 변경은 <b>텀블벅을 통해 문의</b> 부탁드립니다.</li>
+        <li>매주 <b>금요일 18:00 타임은 19:00로 시간 조정이 가능</b>합니다. 텀블벅 메시지를 통해 문의 부탁드립니다.</li>
         <li>시작 시각 <b>10분 전</b>까지 도착해 주세요. 이 테마는 아래 주의사항의 숙지가 필수입니다.
           <ul class="sub">
             <li>지각 시, 게임 시간이 차감됩니다.</li>
